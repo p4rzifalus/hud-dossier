@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HUD Dossier — генератор постеров</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<aside id="side">
+  <header class="brand">HUD / DOSSIER<span>генератор постеров</span></header>
+
+  <section>
+    <h3>Картинка</h3>
+    <label class="btn">Загрузить файл…<input type="file" id="file" accept="image/*" hidden></label>
+    <div class="hint">или перетащи файл на превью</div>
+    <div id="fileinfo" class="hint"></div>
+  </section>
+
+  <section>
+    <h3>Формат постера</h3>
+    <div class="seg" id="aspect"></div>
+  </section>
+
+  <section>
+    <h3>Палитра</h3>
+    <div class="seg" id="presets"></div>
+    <div class="colors" id="colors"></div>
+  </section>
+
+  <section>
+    <h3>Композиция</h3>
+    <div class="seedrow">
+      <label>seed <input type="number" id="seed"></label>
+      <button class="btn" id="regen" title="Клавиша R">Перегенерировать</button>
+    </div>
+    <div class="sub">Плотность интерфейса</div>
+    <div class="seg" id="density"></div>
+    <div class="sub">Зоны</div>
+    <div id="zoneControls" class="grid2"></div>
+    <div id="layoutControls"></div>
+  </section>
+
+  <section>
+    <h3>Обработка картинки</h3>
+    <div id="imgControls"></div>
+  </section>
+
+  <section>
+    <h3>Экспорт</h3>
+    <div class="seg" id="scale"></div>
+    <div class="exportrow">
+      <button class="btn" id="savePng">Скачать PNG</button>
+      <button class="btn" id="saveSvg">Скачать SVG</button>
+    </div>
+    <div class="hint">SVG: рамка, текст и графики — векторные, картинка и увеличенные фрагменты — растр 2x. Для Figma установите шрифт IBM Plex Mono.</div>
+  </section>
+</aside>
+
+<main id="stage">
+  <canvas id="view"></canvas>
+  <div id="drop">Отпусти, чтобы загрузить</div>
+  <div id="status"></div>
+</main>
+
+<script src="js/font-data.js"></script>
+<script src="js/rng.js"></script>
+<script src="js/palette.js"></script>
+<script src="js/image-process.js"></script>
+<script src="js/analysis.js"></script>
+<script src="js/textgen.js"></script>
+<script src="js/draw.js"></script>
+<script src="js/layout.js"></script>
+<script src="js/panels.js"></script>
+<script src="js/render.js"></script>
+<script src="js/export.js"></script>
+<script src="js/ui.js"></script>
+</body>
+</html>
