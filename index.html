@@ -11,9 +11,12 @@
   <header class="brand">HUD / DOSSIER<span>генератор постеров</span></header>
 
   <section>
-    <h3>Картинка</h3>
-    <label class="btn">Загрузить файл…<input type="file" id="file" accept="image/*" hidden></label>
-    <div class="hint">или перетащи файл на превью</div>
+    <h3>Источник</h3>
+    <div class="srcrow">
+      <label class="btn">Картинка или видео…<input type="file" id="file" accept="image/*,video/*,.mov,.m4v" hidden></label>
+      <button class="btn" id="camBtn">Камера</button>
+    </div>
+    <div class="hint">или перетащи файл на превью · видео: mp4, webm, mov</div>
     <div id="fileinfo" class="hint"></div>
   </section>
 
@@ -41,6 +44,15 @@
     <div id="layoutControls"></div>
   </section>
 
+  <section id="motionSection" hidden>
+    <h3>Движение (видео)</h3>
+    <div class="sub">Анимация интерфейса</div>
+    <div class="seg" id="anim"></div>
+    <div class="sub">Пересчитывать данные панелей</div>
+    <div class="seg" id="every"></div>
+    <div id="motionControls" style="margin-top:10px"></div>
+  </section>
+
   <section>
     <h3>Обработка картинки</h3>
     <div id="imgControls"></div>
@@ -54,11 +66,47 @@
       <button class="btn" id="saveSvg">Скачать SVG</button>
     </div>
     <div class="hint">SVG: рамка, текст и графики — векторные, картинка и увеличенные фрагменты — растр 2x. Для Figma установите шрифт IBM Plex Mono.</div>
+    <div id="videoExport" hidden>
+      <div class="sub">Видео (отрезок из плеера)</div>
+      <div class="seg" id="vRes"></div>
+      <div class="seg" id="vFps" style="margin-top:4px"></div>
+      <div class="seg" id="vQuality" style="margin-top:4px"></div>
+      <label class="check" style="margin-top:8px"><input type="checkbox" id="vAudio"> Звук из ролика</label>
+      <div class="hint" id="vPlan"></div>
+      <div class="exportrow"><button class="btn" id="saveVideo">Скачать видео</button></div>
+      <div class="sub">GIF (до 8 секунд)</div>
+      <div class="seg" id="gWidth"></div>
+      <div class="seg" id="gFps" style="margin-top:4px"></div>
+      <div class="hint" id="gPlan"></div>
+      <div class="exportrow"><button class="btn" id="saveGif">Скачать GIF</button></div>
+      <div id="vProgress" hidden>
+        <div class="bar"><div id="vBar"></div></div>
+        <div class="progrow"><span id="vText"></span><button class="btn" id="vCancel">Отмена</button></div>
+      </div>
+    </div>
   </section>
 </aside>
 
 <main id="stage">
   <canvas id="view"></canvas>
+  <div id="player" hidden>
+    <button id="pPlay" title="Пробел">▶</button>
+    <div class="track"><div id="pSeg"></div><input type="range" id="pSeek" min="0" max="1000" step="1" value="0"></div>
+    <span id="pTime">00:00.0 / 00:00.0</span>
+    <button id="pIn" title="Начало отрезка — текущий момент">[ начало</button>
+    <button id="pOut" title="Конец отрезка — текущий момент">конец ]</button>
+    <button id="pReset" title="Весь ролик">весь</button>
+    <button id="pSnap" title="Сохранить текущий кадр как PNG">стоп-кадр PNG</button>
+  </div>
+  <div id="cambar" hidden>
+    <select id="camSelect" title="Какая камера"></select>
+    <button id="camFlip" title="Фронтальная / основная">⟲ камера</button>
+    <button id="camShot" title="Снять кадр — дальше работа как с картинкой">◉ снять фото</button>
+    <button id="camRec" title="Запись обработанного результата">⏺ запись</button>
+    <label class="check" title="Записывать звук с микрофона"><input type="checkbox" id="camMic"> звук</label>
+    <span id="camTime"></span>
+    <button id="camOff">выключить</button>
+  </div>
   <div id="drop">Отпусти, чтобы загрузить</div>
   <div id="status"></div>
 </main>
@@ -73,7 +121,15 @@
 <script src="js/layout.js"></script>
 <script src="js/panels.js"></script>
 <script src="js/render.js"></script>
+<script src="js/gl-process.js"></script>
+<script src="js/video-source.js"></script>
+<script src="js/live.js"></script>
 <script src="js/export.js"></script>
+<script src="js/vendor/mediabunny.min.js"></script>
+<script src="js/export-video.js"></script>
+<script src="js/vendor/gifenc.js"></script>
+<script src="js/export-gif.js"></script>
+<script src="js/camera.js"></script>
 <script src="js/ui.js"></script>
 </body>
 </html>

@@ -45,7 +45,7 @@
     c.width = W; c.height = H;
     const ctx = c.getContext('2d');
     ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
-    const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+    const [iw, ih] = HUD.srcSize(img);
     const k = Math.max(W / iw, H / ih) * (zoom || 1);
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(img, W * (cx == null ? 0.5 : cx) - (iw * k) / 2, H * (cy == null ? 0.5 : cy) - (ih * k) / 2, iw * k, ih * k);

@@ -8,6 +8,11 @@
   const mk = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
   const cols = (w, size) => Math.floor(w / ((size || 6) * HUD.CHAR_W));
 
+  // Анимация (только для видео/камеры): P.t — время в секундах, P.anim — 'off' | 'calm' | 'active'.
+  // Всё движение считается из времени и seed, без случайности — поэтому экспорт повторяет превью.
+  const live = (P) => P.t != null;
+  const AN = (P) => (!live(P) ? 0 : P.anim === 'active' ? 2 : P.anim === 'calm' ? 1 : 0);
+
   // Прямоугольник-источник вписывается в r с сохранением пропорций.
   function fitMap(src, r) {
     const k = Math.min(r.w / src.w, r.h / src.h);
@@ -55,7 +60,8 @@
       d.line(x, r.y, x, r.y + l, st); d.line(r.x, y, r.x + l, y, st);
     }
     const vl = { plain: 'RAW', threshold: 'THR .45', edges: 'EDGE Δ' }[p.variant];
-    d.text(`ROI-${pad(p.roiN, 2)} ×${p.zoom.toFixed(1)}`, r.x, r.y + ih + 2, { size: 5.5, c: col.acc });
+    const trk = AN(P) && Math.floor(P.t * 2) % 2 === 0 ? ' ● TRK' : '';
+    d.text(`ROI-${pad(p.roiN, 2)} ×${p.zoom.toFixed(1)}${trk}`, r.x, r.y + ih + 2, { size: 5.5, c: col.acc });
     d.text(`${pad(roi.x, 4)},${pad(roi.y, 4)} ${vl}`, r.x + r.w, r.y + ih + 2, { size: 5.5, c: col.hi, a: 0.7, align: 'right' });
   }
 
@@ -125,6 +131,12 @@
       d.circle(q[0], q[1], 1.5, { c: col.hi, a: 1 });
       d.text(`P${k + 1} ${f3(data[i])}`, q[0] + (vert ? 3 : 2), q[1] - (vert ? 2 : 7), { size: 5, c: col.hi, a: 0.85 });
     });
+    if (AN(P)) {   // бегущий курсор по кривой
+      const tt = (P.t * 0.12 * AN(P)) % 1, i = Math.min(n - 1, Math.floor(tt * n));
+      const a = pt(tt, 0), b = pt(tt, 1), q = pt(tt, Math.min(1, data[i]));
+      d.line(a[0], a[1], b[0], b[1], { c: col.hi, a: la * 0.6, dash: [1, 1.5] });
+      d.text(f3(data[i]), q[0] + 2, q[1] - 7, { size: 5, c: col.acc });
+    }
     d.text(`${vert ? 'X' : 'Y'}=${pad(p.scan.pos, 4)} LUMA`, r.x, r.y + r.h - 6, { size: 5.5, c: col.acc });
     d.text(`n=${n} Δ${f3(Math.max(...data) - Math.min(...data))}`, r.x + r.w, r.y + r.h - 6, { size: 5.5, c: col.hi, a: 0.7, align: 'right' });
   }
@@ -217,7 +229,9 @@
     const [nc, nr, s] = best;
     const ox = r.x + (r.w - nc * s) / 2, oy = r.y + (r.h - nr * s) / 2;
     for (let j = 0; j < nr; j++) for (let i = 0; i < nc; i++) {
-      const x = ox + i * s, y = oy + j * s, inv = rng.chance(0.08);
+      let inv = rng.chance(0.08);
+      if (AN(P)) inv = HUD.hash2(i + j * 31, Math.floor(P.t * 0.8 * AN(P)), p.rng) < 0.08;
+      const x = ox + i * s, y = oy + j * s;
       d.rect(x + 0.5, y + 0.5, s - 1, s - 1, inv ? { fill: col.acc, fa: 0.9 } : { c: col.hi, a: la * 0.18 });
       glyph(d, x, y, s, rng, inv ? '#000000' : col.hi, inv ? 1 : 0.9);
     }
@@ -234,12 +248,37 @@
     const xs = []; let acc = 0; use.forEach((c) => { xs.push(r.x + (acc + c[1]) * cw); acc += c[1] + gapC; });
     use.forEach((c, i) => d.text(c[0], xs[i], r.y, { size, c: col.acc, align: 'right' }));
     d.line(r.x, r.y + LH - 0.5, r.x + r.w, r.y + LH - 0.5, { c: col.hi, a: la * 0.6 });
-    const rows = Math.floor((r.h - LH) / LH), hl = rng.int(0, rows - 1);
+    const rows = Math.floor((r.h - LH) / LH);
+    let hl = rng.int(0, rows - 1);
+    const newRow = (j, rr) => {
+      const nd = A.nodes.length ? A.nodes[rr.int(0, Math.min(A.nodes.length, 200) - 1)] : { x: rr() * A.W, y: rr() * A.H, e: rr(), l: rr() };
+      return { ID: String.fromCharCode(65 + rr.int(0, 25)) + pad(j + 1, 2), x: nd.x, y: nd.y, e: nd.e, sg: rr() * 0.3,
+        CLS: rr.pick(['A1', 'B2', 'Ω', '--', 'K7', 'R4']), dt: rr.range(0, 99) };
+    };
+    // Видео: строки хранятся в панели и обновляются по одной-несколько за «тик», а не все каждый кадр.
+    let rowsData;
+    if (live(P)) {
+      if (!p._rows) p._rows = [];
+      for (let j = 0; j < rows; j++) if (!p._rows[j]) p._rows[j] = newRow(j, rng);
+      const lvl = AN(P);
+      if (lvl) {
+        const b = Math.floor(P.t * (lvl === 2 ? 6 : 1.5));
+        if (p._b !== b) {
+          p._b = b;
+          const rr = HUD.rng((p.rng ^ Math.imul(b + 1, 2654435761)) >>> 0);
+          for (let q = 0; q < (lvl === 2 ? 3 : 1); q++) { const j = rr.int(0, rows - 1); p._rows[j] = newRow(j, rr); }
+        }
+        hl = Math.floor(P.t * 0.5 * lvl) % rows;
+      }
+      rowsData = p._rows.slice(0, rows);
+    } else {
+      rowsData = []; for (let j = 0; j < rows; j++) rowsData.push(newRow(j, rng));
+    }
     for (let j = 0; j < rows; j++) {
-      const y = r.y + LH + 1 + j * LH;
-      const nd = A.nodes.length ? A.nodes[rng.int(0, Math.min(A.nodes.length, 200) - 1)] : { x: rng() * A.W, y: rng() * A.H, e: rng(), l: rng() };
-      const vals = { ID: String.fromCharCode(65 + rng.int(0, 25)) + pad(j + 1, 2), X: pad(nd.x, 4), Y: pad(nd.y, 4), LUM: f3(A.lumAt(nd.x, nd.y)),
-        EDGE: f3(nd.e), 'σ': f3(rng() * 0.3), CLS: rng.pick(['A1', 'B2', 'Ω', '--', 'K7', 'R4']), 'Δt': rng.range(0, 99).toFixed(2) };
+      const y = r.y + LH + 1 + j * LH, R = rowsData[j], lvl = AN(P);
+      const jit = lvl ? (HUD.hash2(j, Math.floor(P.t * 4 * lvl), p.rng) - 0.5) * 0.04 * lvl : 0;
+      const vals = { ID: R.ID, X: pad(R.x, 4), Y: pad(R.y, 4), LUM: f3(A.lumAt(R.x, R.y)), EDGE: f3(R.e),
+        'σ': f3(Math.max(0, R.sg + jit)), CLS: R.CLS, 'Δt': ((R.dt + (lvl ? P.t * lvl : 0)) % 100).toFixed(2) };
       if (j === hl) d.rect(r.x - 1, y - 1, r.w + 2, LH, { fill: col.acc, fa: 0.2 });
       use.forEach((c, i) => d.text(vals[c[0]], xs[i], y, { size, c: j === hl ? col.acc : col.hi, a: j === hl ? 1 : 0.8, align: 'right' }));
     }
@@ -254,9 +293,12 @@
     const real = rng.chance(0.5);
     const n = Math.max(40, Math.round(r.w));
     let data;
-    if (real) data = norm(resample(Array.from(rng.chance(0.5) ? A.colMeans : A.rowMeans), n)).map((v) => v * 2 - 1);
-    else {
-      const fs = [rng.range(2, 6), rng.range(8, 20), rng.range(25, 60)], ph = fs.map(() => rng() * 6);
+    const lvl = AN(P);
+    if (real) {
+      data = norm(resample(Array.from(rng.chance(0.5) ? A.colMeans : A.rowMeans), n)).map((v) => v * 2 - 1);
+      if (lvl) { const sh = Math.floor(P.t * 0.06 * lvl * n) % n; data = data.slice(sh).concat(data.slice(0, sh)); }
+    } else {
+      const fs = [rng.range(2, 6), rng.range(8, 20), rng.range(25, 60)], ph = fs.map((f) => rng() * 6 + (lvl ? P.t * lvl * 1.5 : 0));
       data = []; for (let i = 0; i < n; i++) { const t = i / n; data.push(0.55 * Math.sin(t * fs[0] * 6.28 + ph[0]) * Math.sin(t * 3.14) + 0.25 * Math.sin(t * fs[1] * 6.28 + ph[1]) + 0.12 * Math.sin(t * fs[2] * 6.28 + ph[2]) + (rng() - 0.5) * 0.12); }
     }
     const mid = r.y + ch / 2;
@@ -277,6 +319,7 @@
     const step = (horiz ? R.h : R.w) / N;
     data.forEach((v, i) => {
       const hl = v === 1;
+      if (AN(P)) v = Math.min(1, v * (1 + 0.06 * AN(P) * Math.sin(P.t * 3 + i * 0.7)));
       const st = { fill: hl ? col.acc : col.hi, fa: hl ? 1 : 0.75 };
       if (horiz) d.rect(R.x, R.y + i * step + 0.5, Math.max(0.5, v * R.w), Math.max(0.5, step - 1.5), st);
       else d.rect(R.x + i * step + 0.5, R.y + R.h - v * R.h, Math.max(0.5, step - 1.5), Math.max(0.5, v * R.h), st);
@@ -320,6 +363,12 @@
     }
     d.poly(pts, { c: col.acc, a: 1, fill: col.acc, fa: 0.15, close: true });
     d.circle(cx, cy, 1.2, { fill: col.hi });
+    if (AN(P)) {   // «радар»: вращающийся луч со следом
+      for (let q = 0; q < 4; q++) {
+        const a = P.t * 1.2 * AN(P) - q * 0.12;
+        d.line(cx, cy, cx + Math.cos(a) * R, cy + Math.sin(a) * R, { c: col.acc, a: 0.8 - q * 0.2 });
+      }
+    }
     d.text(`PEAK ${pad(((best + 0.5) * 10 + 180) % 360, 3)}°`, r.x, r.y + r.h - 6, { size: 5, c: col.acc });
     d.text('36 SEC', r.x + r.w, r.y + r.h - 6, { size: 5, c: col.hi, a: 0.6, align: 'right' });
   }
@@ -346,8 +395,59 @@
       tg.wrap(text, n).slice(0, lines).forEach((l, i) => d.text(l, r.x, r.y + i * LH, { size: 6, c: col.hi, a: 0.6 }));
     }
   }
+  // Видео: каждая строка живёт своей жизнью — изредка «перепечатывается» посимвольно с новым содержимым.
+  function textBlockLive(P, r, seed, variant, lines) {
+    const { d, col } = P, n = cols(r.w), lvl = AN(P), cwid = 6 * HUD.CHAR_W;
+    const period = lvl === 2 ? 3 : 7, prob = lvl === 2 ? 0.6 : 0.3;
+    const mk = (sd) => { const rr = HUD.rng(sd >>> 0); return [rr, new HUD.TextGen(rr, P.meta, P.A)]; };
+    // цикл, в котором строка последний раз перепечатывалась, и насколько она «допечатана» сейчас
+    const state = (key, typeDur) => {
+      const phase = HUD.hash2(key, 7, seed) * period;
+      const cyc = lvl ? Math.floor((P.t + phase) / period) : 0;
+      let c = cyc;
+      while (c > 0 && HUD.hash2(key, c, seed + 3) > prob) c--;
+      let reveal = Infinity;
+      if (lvl && c === cyc && c > 0) { const pr = ((P.t + phase) % period) / typeDur; if (pr < 1) reveal = pr; }
+      return { c, reveal };
+    };
+    const cursor = (x, y) => d.rect(x, y + 0.5, cwid * 0.8, 5, { fill: col.acc, fa: 0.9 });
+    if (variant === 'para') {
+      const st = state(0, 2);
+      const [, tg] = mk(seed + st.c * 7919);
+      let text = ''; while (text.length < n * lines) text += tg.sentence() + ' ';
+      const ls = tg.wrap(text, n).slice(0, lines);
+      const total = ls.reduce((a, l) => a + l.length, 0);
+      let left = st.reveal === Infinity ? Infinity : Math.floor(st.reveal * total);
+      ls.forEach((l, i) => {
+        const vis = Math.max(0, Math.min(l.length, left));
+        if (vis > 0) d.text(l.slice(0, vis), r.x, r.y + i * LH, { size: 6, c: col.hi, a: 0.6 });
+        if (left !== Infinity && left >= 0 && left < l.length) cursor(r.x + vis * cwid, r.y + i * LH);
+        left -= l.length;
+      });
+      return;
+    }
+    for (let i = 0; i < lines; i++) {
+      const y = r.y + i * LH, st = state(i + 1, Math.min(1.2, n * 0.03));
+      const [rr, tg] = mk(seed + i * 1013 + st.c * 7919);
+      let kv = null, full;
+      if (variant === 'kv' || (variant === 'mix' && i > 0)) kv = tg.kv();
+      else if (variant === 'mix') full = ('// ' + tg.title()).slice(0, n);
+      else full = ('— ' + (rr.chance(0.3) ? tg.term() + ' ' : '') + tg.sentence(rr.int(2, 5)).replace('.', '')).slice(0, n);
+      if (st.reveal === Infinity) {
+        if (kv) kvLine(d, kv[0], kv[1], r.x, y, r.w, col, 1);
+        else d.text(full, r.x, y, { size: 6, c: variant === 'mix' ? col.acc : col.hi, a: variant === 'mix' ? 1 : 0.8 });
+      } else {
+        if (kv) { const vs = String(kv[1]), room = n - vs.length - 1, kk = kv[0].slice(0, Math.max(1, room - 2)); full = kk + ' ' + '.'.repeat(Math.max(1, room - kk.length - 1)) + ' ' + vs; }
+        const vis = Math.floor(st.reveal * full.length);
+        d.text(full.slice(0, vis), r.x, y, { size: 6, c: col.hi, a: 0.9 });
+        cursor(r.x + vis * cwid, y);
+      }
+    }
+  }
   function drawText(P, p, r, rng, tg) {
-    textBlock(P, r, rng, tg, p.variant, Math.max(1, Math.floor((r.h + 1) / LH)));
+    const lines = Math.max(1, Math.floor((r.h + 1) / LH));
+    if (live(P)) textBlockLive(P, r, p.rng + 11, p.variant, lines);
+    else textBlock(P, r, rng, tg, p.variant, lines);
   }
 
   HUD.PANEL_TYPES = {
@@ -372,6 +472,7 @@
     const { d, col, la, meta, A } = P;
     const items = [`SPECIMEN DOSSIER // ${meta.specimenId}`, meta.fileName.toUpperCase(), meta.date,
       `SEED ${meta.seed}`, `${A.W}×${A.H} · PLATE ${pad(rng.int(1, 48), 2)}`];
+    if (live(P)) items.splice(3, 0, `T+ ${HUD.fmtTime(P.t)}${AN(P) && Math.floor(P.t * 2) % 2 === 0 ? ' ●' : '  '}`);
     const size = Math.min(7, z.h * 0.45);
     const ws = items.map((s) => HUD.textWidth(s, size) + 16);
     const extra = (z.w - ws.reduce((a, b) => a + b, 0)) / items.length;
@@ -390,7 +491,7 @@
     const { d, col, la, A } = P, Z = scene.Z;
     scene.markers.forEach((m) => {
       if (m.kind === 'roi') {
-        const r = m.rect, pn = m.panel;
+        const pn = m.panel, r = pn.roi;   // в видео рамка движется — берём актуальное положение
         d.rect(r.x, r.y, r.w, r.h, { c: col.acc, a: 0.95 });
         [[r.x, r.y, 1, 1], [r.x + r.w, r.y, -1, 1], [r.x, r.y + r.h, 1, -1], [r.x + r.w, r.y + r.h, -1, -1]].forEach(([x, y, sx, sy]) => {
           d.line(x - sx * 3, y, x + sx * 5, y, { c: col.acc, a: 1, w: 1.5 }); d.line(x, y - sy * 3, x, y + sy * 5, { c: col.acc, a: 1, w: 1.5 });
@@ -457,7 +558,9 @@
       [[fl.x - 2, fl.y - 2, 1, 1], [fl.x + fl.w + 2, fl.y - 2, -1, 1], [fl.x - 2, fl.y + fl.h, 1, -1], [fl.x + fl.w + 2, fl.y + fl.h, -1, -1]]
         .forEach(([x, y, sx, sy]) => { d.line(x, y, x + sx * b, y, st); d.line(x, y, x, y + sy * b, st); });
       d.text(`> ${tg.term()} NOTE ${pad(fl.n, 2)}`.slice(0, cols(fl.w)), fl.x, fl.y, { size: 6, c: col.acc });
-      textBlock(P, { x: fl.x, y: fl.y + LH, w: fl.w, h: fl.h - LH }, rng, tg, rng.pick(['kv', 'kv', 'list', 'para']), fl.lines - 1);
+      const variant = rng.pick(['kv', 'kv', 'list', 'para']), box = { x: fl.x, y: fl.y + LH, w: fl.w, h: fl.h - LH };
+      if (live(P)) textBlockLive(P, box, fl.rng + 11, variant, fl.lines - 1);
+      else textBlock(P, box, rng, tg, variant, fl.lines - 1);
     });
   }
 

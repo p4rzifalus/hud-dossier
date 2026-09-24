@@ -6,7 +6,7 @@ HUD.IMAGE_KEYS = ['colors', 'contrast', 'shadows', 'bloomThreshold', 'bloomStren
 
 HUD.posterSize = function (aspect, img) {
   let r;
-  if (aspect === 'src') r = Math.min(2.5, Math.max(0.4, (img.naturalHeight || img.height) / (img.naturalWidth || img.width)));
+  if (aspect === 'src') { const [iw, ih] = HUD.srcSize(img); r = Math.min(2.5, Math.max(0.4, ih / iw)); }
   else { const [a, b] = aspect.split(':').map(Number); r = b / a; }
   return { W: HUD.BASE_W, H: Math.round(HUD.BASE_W * r) };
 };

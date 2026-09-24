@@ -25,3 +25,6 @@ HUD.hash2 = function (x, y, seed) {
 };
 
 HUD.randomSeed = () => Math.floor(Math.random() * 900000) + 100000;
+
+// Размер источника: картинка, видео или холст.
+HUD.srcSize = (m) => [m.naturalWidth || m.videoWidth || m.width, m.naturalHeight || m.videoHeight || m.height];

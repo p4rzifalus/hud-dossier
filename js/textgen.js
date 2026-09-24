@@ -72,7 +72,7 @@ HUD.makeMeta = function (state, W, H) {
   const L = 'ABCDEHKMRSTXZ';
   const d = new Date();
   return {
-    fileName: state.fileName, srcW: img.naturalWidth || img.width, srcH: img.naturalHeight || img.height,
+    fileName: state.fileName, srcW: HUD.srcSize(img)[0], srcH: HUD.srcSize(img)[1],
     date: `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`,
     specimenId: L[hr.int(0, L.length - 1)] + L[hr.int(0, L.length - 1)] + '-' + String(hr.int(1000, 9999)) + '-' + L[hr.int(0, 3)],
     seed: state.s.seed, colors: state.s.colors, W, H,
