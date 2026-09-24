@@ -1,3 +1,13 @@
+/* ===== Шрифт из макета: Pragmatica Next VF 2025 (ParaType), вариативный: ширина wdth × насыщенность wght.
+   Берём установленный в системе: файл шрифта в проект не кладём — его лицензия не разрешает выкладывать шрифт в интернет.
+   Где шрифта нет, будет системный. ===== */
+@font-face {
+  font-family: 'HUD Pragmatica';
+  src: local('Pragmatica Next VF 2025'), local('PragmaticaNextVF');
+  font-weight: 100 900;
+  font-stretch: 50% 200%;
+}
+
 /* ===== Токены из макета Figma (HUD Generator) ===== */
 :root {
   --bg: #0b0d0c;
@@ -16,15 +26,17 @@
   --gap: 5px;
   --col: 225px;
   --ctl: 30px;                              /* высота кнопок и ползунков */
-  /* Шрифт из макета — Pragmatica Next (Extended / Wide). Пока файлов нет — системный. */
-  --font: 'Pragmatica Next VF 2025', 'Pragmatica Next', 'Pragmatica Extended', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
-  --font-wide: 'Pragmatica Next VF 2025', 'Pragmatica Next', 'Pragmatica Wide', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  --font: 'HUD Pragmatica', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  /* Начертания из макета (ширина, насыщенность) */
+  --ext-medium: 'wdth' 125, 'wght' 520;     /* Extended Medium — заголовки групп, подписи */
+  --ext-semibold: 'wdth' 125, 'wght' 600;   /* Extended Semibold — кнопки */
+  --wide-semibold: 'wdth' 200, 'wght' 600;  /* Wide Semibold — логотип */
 }
 
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); }
-body { font: 500 10px/1.2 var(--font); font-stretch: 125%; -webkit-font-smoothing: antialiased; overflow: hidden; }
+body { font: 500 10px/1.2 var(--font); font-variation-settings: var(--ext-medium); -webkit-font-smoothing: antialiased; overflow: hidden; }
 button, input, select { font: inherit; color: inherit; }
 img { display: block; }
 
@@ -39,7 +51,7 @@ img { display: block; }
 }
 .logo {
   grid-column: 1 / span 2; grid-row: 1; align-self: start; margin: 0 0 27px;
-  font: 600 20px/1.2 var(--font-wide); font-stretch: 150%; letter-spacing: 0.02em; white-space: nowrap;
+  font: 600 20px/1.2 var(--font); font-variation-settings: var(--wide-semibold); white-space: nowrap;
 }
 .col { display: flex; flex-direction: column; gap: var(--gap); min-height: 0; overflow-y: auto; scrollbar-width: none; }
 .col::-webkit-scrollbar { display: none; }
@@ -54,7 +66,7 @@ img { display: block; }
 .card { background: var(--card); border-radius: var(--r-card); padding: 5px; display: flex; flex-direction: column; gap: 8px; flex: none; }
 .card-zones { padding-bottom: 15px; }
 .card-head { height: var(--ctl); display: flex; align-items: center; justify-content: space-between; }
-.card-head h2 { margin: 0; padding: 0 10px; font: 500 12px/1.2 var(--font); font-stretch: 125%; white-space: nowrap; }
+.card-head h2 { margin: 0; padding: 0 10px; font: 500 12px/1.2 var(--font); font-variation-settings: var(--ext-medium); white-space: nowrap; }
 .reset, .toggle {
   width: var(--ctl); height: var(--ctl); flex: none; border: 0; border-radius: var(--r-btn); padding: 0;
   display: grid; place-items: center; cursor: pointer;
@@ -74,7 +86,7 @@ img { display: block; }
 .btn {
   height: var(--ctl); border: 0; border-radius: var(--r-btn); background: var(--card); color: var(--text);
   display: flex; align-items: center; justify-content: center; gap: 5px; padding: 0 12px;
-  font: 600 10px/1.2 var(--font); font-stretch: 125%; white-space: nowrap; cursor: pointer; flex: 1 1 0; min-width: 0;
+  font: 600 10px/1.2 var(--font); font-variation-settings: var(--ext-semibold); white-space: nowrap; cursor: pointer; flex: 1 1 0; min-width: 0;
 }
 .btn img { width: 14px; height: 14px; flex: none; }
 .btn:hover { background: rgba(255, 255, 255, 0.16); }
@@ -165,12 +177,12 @@ select.btn option { background: var(--card-solid); }
 .chips { display: flex; flex-wrap: wrap; gap: 5px; }
 .chip {
   height: 24px; border: 0; border-radius: 8px; background: var(--card); color: var(--text); padding: 0 9px;
-  font: 600 10px/1.2 var(--font); font-stretch: 125%; cursor: pointer; flex: 1 0 auto;
+  font: 600 10px/1.2 var(--font); font-variation-settings: var(--ext-semibold); cursor: pointer; flex: 1 0 auto;
 }
 .chip:hover { background: rgba(255, 255, 255, 0.16); }
 .num {
   height: var(--ctl); border: 0; border-radius: var(--r-btn); background: var(--card); padding: 0 10px; width: 100%;
-  font: 600 10px/1.2 var(--font); font-stretch: 125%;
+  font: 600 10px/1.2 var(--font); font-variation-settings: var(--ext-semibold);
 }
 .hint { padding: 0 10px; font-size: 10px; opacity: 0.5; }
 .status { padding-top: 4px; }
