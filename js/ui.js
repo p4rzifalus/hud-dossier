@@ -3,6 +3,7 @@
   const $ = (id) => document.getElementById(id);
 
   const state = {
+    mode: 'image', video: null, srcId: 'demo',
     img: HUD.makeDemo(), imgId: 'demo', fileName: 'specimen_demo.png',
     s: {
       aspect: '4:5', preset: 'acid', colors: HUD.PRESETS.acid.colors.slice(),
@@ -16,27 +17,100 @@
   const renderer = new HUD.Renderer();
   const view = $('view'), vctx = view.getContext('2d');
   const cur = { A: null, aKey: null, scene: null, meta: null };   // что сейчас на экране (нужно экспорту)
+  const live = new HUD.Live();
 
   // ---------- перерисовка (не чаще одного раза за кадр) ----------
   let pending = false, fontReady = false;
   function redraw() {
     if (pending || !fontReady) return;
     pending = true;
-    requestAnimationFrame(() => {
-      pending = false;
-      const s = state.s, t0 = performance.now();
-      const r = renderer.renderImageLayer(state.img, state.imgId, s, 1);
-      if (cur.aKey !== r.key) { cur.A = HUD.analyze(r.image, r.fit, r.W, r.H); cur.aKey = r.key; }
-      const t1 = performance.now();
-      cur.meta = HUD.makeMeta(state, r.W, r.H);
-      cur.scene = HUD.buildScene(cur.A, s, r.W, r.H, cur.meta);
-      if (view.width !== r.pw || view.height !== r.ph) { view.width = r.pw; view.height = r.ph; }
-      vctx.setTransform(1, 0, 0, 1, 0, 0); vctx.globalAlpha = 1;
-      vctx.drawImage(r.image.canvas, 0, 0);
-      HUD.drawUI(new HUD.CanvasDraw(vctx, 1), cur.scene, { A: cur.A, s, meta: cur.meta, proc: r.image, imgS: 1 });
-      const t2 = performance.now();
-      $('status').textContent = `${r.W}×${r.H} · картинка ${Math.round(t1 - t0)} мс · интерфейс ${Math.round(t2 - t1)} мс · панелей ${cur.scene.panels.length}`;
-    });
+    requestAnimationFrame(() => { pending = false; drawNow(); });
+  }
+  function drawNow() {
+    if (state.mode === 'video') { drawVideoFrame(); return; }
+    const s = state.s, t0 = performance.now();
+    const r = renderer.renderImageLayer(state.img, state.imgId, s, 1);
+    if (cur.aKey !== r.key) { cur.A = HUD.analyze(r.image, r.fit, r.W, r.H); cur.aKey = r.key; }
+    const t1 = performance.now();
+    cur.meta = HUD.makeMeta(state, r.W, r.H);
+    cur.scene = HUD.buildScene(cur.A, s, r.W, r.H, cur.meta);
+    if (view.width !== r.pw || view.height !== r.ph) { view.width = r.pw; view.height = r.ph; }
+    vctx.setTransform(1, 0, 0, 1, 0, 0); vctx.globalAlpha = 1;
+    vctx.drawImage(r.image.canvas, 0, 0);
+    HUD.drawUI(new HUD.CanvasDraw(vctx, 1), cur.scene, { A: cur.A, s, meta: cur.meta, proc: r.image, imgS: 1 });
+    const t2 = performance.now();
+    $('status').textContent = `${r.W}×${r.H} · картинка ${Math.round(t1 - t0)} мс · интерфейс ${Math.round(t2 - t1)} мс · панелей ${cur.scene.panels.length}`;
+  }
+
+  // ---------- видео ----------
+  let fpsT = [];
+  function drawVideoFrame() {
+    const v = state.video.video;
+    if (v.readyState < 2) return;
+    const t0 = performance.now();
+    const r = live.frame(v, state, view, 1);
+    cur.A = r.A; cur.scene = r.scene; cur.meta = r.meta;
+    const t1 = performance.now();
+    if (!v.paused) { fpsT.push(t1); while (fpsT.length && t1 - fpsT[0] > 1000) fpsT.shift(); } else fpsT = [];
+    $('status').textContent = `${r.W}×${r.H} · кадр ${Math.round(t1 - t0)} мс` + (fpsT.length > 1 ? ` · ${fpsT.length} fps` : '') + ` · панелей ${r.scene.panels.length}`;
+    updatePlayer();
+  }
+
+  const player = $('player'), pSeek = $('pSeek');
+  function updatePlayer() {
+    const vs = state.video; if (!vs) return;
+    const v = vs.video, d = v.duration || 1;
+    $('pPlay').textContent = v.paused ? '▶' : '❚❚';
+    if (!seeking) pSeek.value = Math.round((v.currentTime / d) * 1000);
+    $('pTime').textContent = `${HUD.fmtTime(v.currentTime)} / ${HUD.fmtTime(v.duration)}`;
+    const seg = $('pSeg');
+    seg.style.left = (vs.inT / d) * 100 + '%';
+    seg.style.width = ((vs.outT - vs.inT) / d) * 100 + '%';
+  }
+  // Проигрывание: на каждом обновлении экрана смотрим, сменился ли кадр видео; крутим по кругу внутри отрезка.
+  let lastVT = -1;
+  function onVideoFrame() {
+    const vs = state.video; if (!vs) return;
+    const v = vs.video;
+    if (v.paused) return;
+    if (v.currentTime >= vs.outT - 0.001 || v.currentTime < vs.inT - 0.05) v.currentTime = vs.inT;
+    if (v.currentTime !== lastVT) { lastVT = v.currentTime; redraw(); }
+    requestAnimationFrame(onVideoFrame);
+  }
+  function togglePlay() {
+    const vs = state.video; if (!vs) return;
+    const v = vs.video;
+    if (v.paused) {
+      if (v.currentTime >= vs.outT - 0.01) v.currentTime = vs.inT;
+      v.play().then(onVideoFrame).catch(() => {});
+    } else v.pause();
+    setTimeout(updatePlayer, 0);
+  }
+  let seeking = false;
+  $('pPlay').onclick = togglePlay;
+  pSeek.oninput = () => {
+    const vs = state.video; if (!vs) return;
+    seeking = true;
+    vs.seek((pSeek.value / 1000) * vs.video.duration).then(() => { seeking = false; redraw(); });
+  };
+  $('pIn').onclick = () => { const vs = state.video; vs.inT = Math.min(vs.video.currentTime, vs.outT - 0.1); updatePlayer(); };
+  $('pOut').onclick = () => { const vs = state.video; vs.outT = Math.max(vs.video.currentTime, vs.inT + 0.1); updatePlayer(); };
+  $('pReset').onclick = () => { const vs = state.video; vs.inT = 0; vs.outT = vs.video.duration; updatePlayer(); };
+
+  // Текущий кадр как обычная картинка — для PNG/SVG «как у картинок».
+  function frameState() {
+    drawNow();   // раскладка и анализ должны соответствовать именно тому, что экспортируем
+    if (state.mode !== 'video') return state;
+    const vs = state.video, t = vs.video.currentTime;
+    const base = state.fileName.replace(/\.[^.]+$/, '');
+    return { img: vs.grabFrame(), imgId: state.srcId + '@' + t, fileName: `${base}_${t.toFixed(2).replace(".", "-")}s`, s: state.s };
+  }
+
+  function setMode(mode) {
+    state.mode = mode;
+    player.hidden = mode !== 'video';
+    $('stage').classList.toggle('has-player', mode === 'video');
+    if (mode !== 'video' && state.video) state.video.video.pause();
   }
 
   // ---------- кнопки-переключатели ----------
@@ -119,17 +193,38 @@
   function regen() { state.s.seed = HUD.randomSeed(); seedInp.value = state.s.seed; redraw(); }
   $('regen').onclick = regen;
   document.addEventListener('keydown', (e) => {
-    if ((e.key === 'r' || e.key === 'к') && !e.metaKey && !e.ctrlKey && e.target.tagName !== 'INPUT') regen();
+    if (e.target.tagName === 'INPUT' || e.metaKey || e.ctrlKey) return;
+    if (e.key === 'r' || e.key === 'к') regen();
+    if (e.key === ' ' && state.mode === 'video') {
+      e.preventDefault();
+      if (e.target.tagName === 'BUTTON') e.target.blur();   // иначе пробел ещё и «нажмёт» кнопку
+      togglePlay();
+    }
   });
 
   // ---------- загрузка картинки ----------
   let counter = 0;
+  const isVideo = (f) => f.type.startsWith('video/') || /\.(mp4|webm|mov|m4v)$/i.test(f.name);
+  async function loadVideo(file) {
+    $('fileinfo').textContent = `Открываю ${file.name}…`;
+    const vs = new HUD.VideoSource(file);
+    try { await vs.ready; } catch (e) { $('fileinfo').textContent = e.message; return; }
+    if (state.video) { state.video.video.pause(); URL.revokeObjectURL(state.video.video.src); }
+    state.video = vs; state.srcId = 'v' + (++counter); state.fileName = file.name;
+    const v = vs.video;
+    $('fileinfo').textContent = `${file.name} · ${v.videoWidth}×${v.videoHeight} · ${v.duration.toFixed(1)} с`;
+    setMode('video');
+    redraw();
+  }
   function loadFile(file) {
-    if (!file || !file.type.startsWith('image/')) return;
+    if (!file) return;
+    if (isVideo(file)) { loadVideo(file); return; }
+    if (!file.type.startsWith('image/')) return;
     const im = new Image();
     im.onload = () => {
-      state.img = im; state.imgId = 'f' + (++counter); state.fileName = file.name;
+      state.img = im; state.imgId = 'f' + (++counter); state.srcId = state.imgId; state.fileName = file.name;
       $('fileinfo').textContent = `${file.name} · ${im.naturalWidth}×${im.naturalHeight}`;
+      setMode('image');
       redraw();
     };
     im.onerror = () => { $('fileinfo').textContent = 'Не удалось открыть этот файл'; };
@@ -153,8 +248,9 @@
       fn().catch((e) => alert(e.message)).finally(() => { btns.forEach((b) => (b.disabled = false)); btn.textContent = old; });
     }, 30);
   }
-  $('savePng').onclick = () => runExport($('savePng'), () => HUD.exportPNG(state, cur, state.s.exportScale));
-  $('saveSvg').onclick = () => runExport($('saveSvg'), () => HUD.exportSVG(state, cur));
+  $('savePng').onclick = () => runExport($('savePng'), () => HUD.exportPNG(frameState(), cur, state.s.exportScale));
+  $('saveSvg').onclick = () => runExport($('saveSvg'), () => HUD.exportSVG(frameState(), cur));
+  $('pSnap').onclick = () => runExport($('savePng'), () => HUD.exportPNG(frameState(), cur, state.s.exportScale));
 
   $('fileinfo').textContent = 'Сейчас: демо-образец';
   HUD.state = state; HUD.cur = cur; HUD.redraw = redraw;   // для отладки

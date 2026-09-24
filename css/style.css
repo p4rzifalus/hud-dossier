@@ -58,3 +58,16 @@ h3 { margin: 0 0 10px; font-size: 10px; font-weight: normal; text-transform: upp
 .exportrow .btn { flex: 1; }
 .btn:disabled { opacity: .4; cursor: wait; }
 #layoutControls { margin-top: 10px; }
+
+#stage.has-player { padding-bottom: 64px; }
+#player { position: absolute; left: 24px; right: 24px; bottom: 22px; display: flex; align-items: center; gap: 6px;
+  font-size: 11px; }
+#player[hidden] { display: none; }
+#player button { background: none; border: 1px solid var(--line); color: var(--text); font: inherit; font-size: 11px;
+  padding: 4px 7px; cursor: pointer; white-space: nowrap; }
+#player button:hover { border-color: var(--accent); color: var(--accent); }
+#pPlay { width: 30px; }
+#player .track { flex: 1; position: relative; height: 20px; display: flex; align-items: center; min-width: 80px; }
+#pSeg { position: absolute; top: 7px; height: 6px; background: var(--accent); opacity: .3; pointer-events: none; }
+#pSeek { width: 100%; accent-color: var(--accent); position: relative; }
+#pTime { color: var(--dim); white-space: nowrap; }

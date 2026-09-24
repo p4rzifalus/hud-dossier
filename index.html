@@ -12,8 +12,8 @@
 
   <section>
     <h3>Картинка</h3>
-    <label class="btn">Загрузить файл…<input type="file" id="file" accept="image/*" hidden></label>
-    <div class="hint">или перетащи файл на превью</div>
+    <label class="btn">Загрузить картинку или видео…<input type="file" id="file" accept="image/*,video/*,.mov,.m4v" hidden></label>
+    <div class="hint">или перетащи файл на превью · видео: mp4, webm, mov</div>
     <div id="fileinfo" class="hint"></div>
   </section>
 
@@ -59,6 +59,15 @@
 
 <main id="stage">
   <canvas id="view"></canvas>
+  <div id="player" hidden>
+    <button id="pPlay" title="Пробел">▶</button>
+    <div class="track"><div id="pSeg"></div><input type="range" id="pSeek" min="0" max="1000" step="1" value="0"></div>
+    <span id="pTime">00:00.0 / 00:00.0</span>
+    <button id="pIn" title="Начало отрезка — текущий момент">[ начало</button>
+    <button id="pOut" title="Конец отрезка — текущий момент">конец ]</button>
+    <button id="pReset" title="Весь ролик">весь</button>
+    <button id="pSnap" title="Сохранить текущий кадр как PNG">стоп-кадр PNG</button>
+  </div>
   <div id="drop">Отпусти, чтобы загрузить</div>
   <div id="status"></div>
 </main>
@@ -73,6 +82,9 @@
 <script src="js/layout.js"></script>
 <script src="js/panels.js"></script>
 <script src="js/render.js"></script>
+<script src="js/gl-process.js"></script>
+<script src="js/video-source.js"></script>
+<script src="js/live.js"></script>
 <script src="js/export.js"></script>
 <script src="js/ui.js"></script>
 </body>
