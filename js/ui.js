@@ -1,28 +1,38 @@
-// Интерфейс инструмента: загрузка, настройки, живое превью, экспорт.
+// Интерфейс инструмента (по макету HUD Generator): загрузка, настройки, живое превью, экспорт.
 (function () {
   const $ = (id) => document.getElementById(id);
+  const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
+
+  // Значения по умолчанию — к ним возвращают кнопки сброса групп.
+  const DEFAULTS = {
+    aspect: '4:5', preset: 'green', colors: HUD.PRESETS.green.colors.slice(),
+    exposure: 50, contrast: 55, shadows: 30, bloomThreshold: 70, bloomStrength: 55,
+    grain: 30, pixels: 0, vhs: 0, zoom: 100,
+    density: 'mid', zones: { top: true, left: false, right: true, bottom: true },
+    floatText: 50, lineOpacity: 60, exportScale: 2,
+    // движение (видео и камера)
+    anim: 'calm', analysisEvery: 2, smoothing: 70, trackSmooth: 50, scanCrawl: false,
+    // экспорт видео и GIF
+    vRes: '1080', vFps: 30, vQuality: 'mid', vAudio: true, gWidth: 800, gFps: 12,
+  };
+  const GROUPS = {
+    zones: ['zones'],
+    colors: ['preset', 'colors'],
+    process: ['exposure', 'contrast', 'bloomStrength', 'shadows', 'bloomThreshold'],
+    effects: ['grain', 'pixels', 'vhs'],
+  };
+  const clone = (v) => JSON.parse(JSON.stringify(v));
 
   const state = {
     mode: 'image', video: null, srcId: 'demo',
     img: HUD.makeDemo(), imgId: 'demo', fileName: 'specimen_demo.png',
-    s: {
-      aspect: '4:5', preset: 'acid', colors: HUD.PRESETS.acid.colors.slice(),
-      contrast: 55, shadows: 30, bloomThreshold: 70, bloomStrength: 55, grain: 30,
-      dither: false, scanlines: false, zoom: 100,
-      seed: HUD.randomSeed(), density: 'mid',
-      zones: { top: true, left: false, right: true, bottom: true },
-      floatText: 50, lineOpacity: 60, exportScale: 2,
-      // движение (видео и камера)
-      anim: 'calm', analysisEvery: 2, smoothing: 70, trackSmooth: 50, scanCrawl: false,
-      // экспорт видео
-      vRes: '1080', vFps: 30, vQuality: 'mid', vAudio: true,
-      gWidth: 800, gFps: 12,
-    },
+    s: Object.assign(clone(DEFAULTS), { seed: HUD.randomSeed() }),
   };
   const renderer = new HUD.Renderer();
   const view = $('view'), vctx = view.getContext('2d');
   const cur = { A: null, aKey: null, scene: null, meta: null };   // что сейчас на экране (нужно экспорту)
   const live = new HUD.Live();
+  const note = (text) => { $('fileinfo').textContent = text; };
 
   // ---------- перерисовка (не чаще одного раза за кадр) ----------
   let pending = false, fontReady = false;
@@ -90,12 +100,13 @@
     if (drawLiveFrame(v, v.currentTime, !v.paused)) updatePlayer();
   }
 
-  const player = $('player'), pSeek = $('pSeek');
+  const pSeek = $('pSeek');
+  let seeking = false;
   function updatePlayer() {
     const vs = state.video; if (!vs) return;
     const v = vs.video, d = v.duration || 1;
-    $('pPlay').textContent = v.paused ? '▶' : '❚❚';
-    if (!seeking) pSeek.value = Math.round((v.currentTime / d) * 1000);
+    $('pPlay').firstElementChild.src = v.paused ? 'assets/icons/play.svg' : 'assets/icons/pause.svg';
+    if (!seeking) { pSeek.value = Math.round((v.currentTime / d) * 1000); paintBar(pSeek); }
     $('pTime').textContent = `${HUD.fmtTime(v.currentTime)} / ${HUD.fmtTime(v.duration)}`;
     const seg = $('pSeg');
     seg.style.left = (vs.inT / d) * 100 + '%';
@@ -122,11 +133,10 @@
     } else v.pause();
     setTimeout(updatePlayer, 0);
   }
-  let seeking = false;
   $('pPlay').onclick = togglePlay;
   pSeek.oninput = () => {
     const vs = state.video; if (!vs) return;
-    seeking = true;
+    seeking = true; paintBar(pSeek);
     vs.seek((pSeek.value / 1000) * vs.video.duration).then(() => { seeking = false; redraw(); });
   };
   $('pIn').onclick = () => { const vs = state.video; vs.inT = Math.min(vs.video.currentTime, vs.outT - 0.1); updatePlayer(); };
@@ -140,22 +150,22 @@
     if (state.mode !== 'video') return state;
     const vs = state.video, t = vs.video.currentTime;
     const base = state.fileName.replace(/\.[^.]+$/, '');
-    return { img: vs.grabFrame(), imgId: state.srcId + '@' + t, fileName: `${base}_${t.toFixed(2).replace(".", "-")}s`, s: state.s };
+    return { img: vs.grabFrame(), imgId: state.srcId + '@' + t, fileName: `${base}_${t.toFixed(2).replace('.', '-')}s`, s: state.s };
   }
 
   function setMode(mode) {
     state.mode = mode;
-    player.hidden = mode !== 'video';
+    $('player').hidden = mode !== 'video';
     $('cambar').hidden = mode !== 'camera';
-    $('motionSection').hidden = mode === 'image';
-    $('videoExport').hidden = mode !== 'video';
-    $('stage').classList.toggle('has-player', mode !== 'image');
+    $$('[data-show="live"]').forEach((el) => { el.hidden = mode === 'image'; });
+    $$('[data-show="video"]').forEach((el) => { el.hidden = mode !== 'video'; });
+    $('saveGif').disabled = $('saveVideo').disabled = mode !== 'video';
     if (mode !== 'video' && state.video) state.video.video.pause();
     if (mode !== 'camera' && cam) { if (cam.rec) stopRec(); cam.stop(); }
   }
 
   // ---------- камера ----------
-  let cam = null, camLastT = -1, recTimer = null;
+  let cam = null, camLastT = -1, recTimer = null, camPurpose = 'photo';
   const camName = () => { const d = new Date(), p = (n) => String(n).padStart(2, '0');
     return `camera_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`; };
   function drawCameraFrame() { drawLiveFrame(cam.video, cam.time(), true); }
@@ -177,15 +187,20 @@
     });
     sel.hidden = list.length < 2;
   }
-  async function startCamera() {
+  // purpose: 'photo' — на плашке «Снять», 'video' — «Запись».
+  async function startCamera(purpose) {
+    camPurpose = purpose;
+    $('camShot').hidden = purpose !== 'photo';
+    $('camRec').hidden = $('camMic').hidden = purpose !== 'video';
+    if (state.mode === 'camera') return;
     const problem = HUD.cameraProblem();
-    if (problem) { $('fileinfo').textContent = problem; return; }
+    if (problem) { note(problem); return; }
     if (!cam) cam = new HUD.Camera();
-    $('fileinfo').textContent = 'Включаю камеру…';
-    try { await cam.start(); } catch (e) { $('fileinfo').textContent = HUD.cameraErrorText(e); return; }
+    note('Включаю камеру…');
+    try { await cam.start(); } catch (e) { note(HUD.cameraErrorText(e)); return; }
     state.srcId = 'cam' + (++counter); state.fileName = 'camera';
     const v = cam.video;
-    $('fileinfo').textContent = `Камера · ${v.videoWidth}×${v.videoHeight}`;
+    note(`Камера · ${v.videoWidth}×${v.videoHeight}`);
     setMode('camera');
     fillCameraList().catch(() => {});
     cameraLoop();
@@ -194,10 +209,10 @@
     if (cam.rec) return;
     if (deviceId) cam.deviceId = deviceId;
     else { cam.deviceId = null; cam.facing = cam.facing === 'user' ? 'environment' : 'user'; }
-    try { await cam.start(); } catch (e) { $('fileinfo').textContent = HUD.cameraErrorText(e); return; }
+    try { await cam.start(); } catch (e) { note(HUD.cameraErrorText(e)); return; }
     live.reset();
     const v = cam.video;
-    $('fileinfo').textContent = `Камера · ${v.videoWidth}×${v.videoHeight}`;
+    note(`Камера · ${v.videoWidth}×${v.videoHeight}`);
     fillCameraList().catch(() => {});
     cameraLoop();
   }
@@ -205,121 +220,152 @@
   function takePhoto() {
     const shot = cam.grab();
     state.img = shot; state.imgId = 'shot' + (++counter); state.srcId = state.imgId; state.fileName = camName() + '.png';
-    $('fileinfo').textContent = `Снимок с камеры · ${shot.width}×${shot.height}`;
+    note(`Снимок с камеры · ${shot.width}×${shot.height}`);
     setMode('image');
     redraw();
   }
+  const camLock = (on) => ['camFlip', 'camSelect', 'camMic', 'camOff'].forEach((id) => ($(id).disabled = on));
   async function startRec() {
-    await cam.startRecording(view, $('camMic').checked);
-    $('camRec').textContent = '■ стоп'; $('camRec').classList.add('rec');
-    ['camShot', 'camFlip', 'camSelect', 'camMic'].forEach((id) => ($(id).disabled = true));
+    await cam.startRecording(view, $('camMic').classList.contains('on'));
+    $('camRec').textContent = '■ Стоп'; $('camRec').classList.add('rec');
+    camLock(true);
     recTimer = setInterval(() => { $('camTime').textContent = '● ' + HUD.fmtTime((performance.now() - cam.rec.t0) / 1000); }, 200);
   }
   async function stopRec() {
     clearInterval(recTimer); $('camTime').textContent = '';
-    $('camRec').textContent = '⏺ запись'; $('camRec').classList.remove('rec');
-    ['camShot', 'camFlip', 'camSelect', 'camMic'].forEach((id) => ($(id).disabled = false));
+    $('camRec').textContent = '⏺ Запись'; $('camRec').classList.remove('rec');
+    camLock(false);
     const r = await cam.stopRecording();
-    if (!r || !r.processed.size) { $('fileinfo').textContent = 'Запись пустая.'; return; }
+    if (!r || !r.processed.size) { note('Запись пустая.'); return; }
     const name = camName();
     HUD.download(r.processed, `${name}_hud.${r.ext}`);   // обработанная запись — сразу в загрузки
     // Исходник открываем как видео: его можно экспортировать заново в полном качестве.
     const rawFile = new File([r.raw], `${name}_raw.${(r.raw.type || '').includes('mp4') ? 'mp4' : 'webm'}`, { type: r.raw.type || 'video/webm' });
     await loadVideo(rawFile);
-    $('fileinfo').textContent += ` · запись ${r.seconds.toFixed(1)} с сохранена; исходник открыт для экспорта в полном качестве`
-      + (r.micDenied ? ' · микрофон не разрешён — без звука' : '');
+    note($('fileinfo').textContent + ` · запись ${r.seconds.toFixed(1)} с сохранена; исходник открыт — можно скачать видео или гифку в полном качестве`
+      + (r.micDenied ? ' · микрофон не разрешён — без звука' : ''));
   }
+  $('camPhoto').onclick = () => startCamera('photo');
+  $('camVideo').onclick = () => startCamera('video');
+  $('camFlip').onclick = () => switchCamera(null);
+  $('camSelect').onchange = (e) => switchCamera(e.target.value);
+  $('camShot').onclick = takePhoto;
+  $('camMic').onclick = () => $('camMic').classList.toggle('on');
+  $('camRec').onclick = () => (cam && cam.rec ? stopRec() : startRec().catch((e) => { note('Запись не удалась: ' + e.message); }));
+  $('camOff').onclick = () => { setMode('image'); note('Камера выключена'); redraw(); };
 
-  // ---------- кнопки-переключатели ----------
-  function segButtons(el, items, current, onPick) {
-    el.innerHTML = '';
-    items.forEach(([val, label]) => {
-      const b = document.createElement('button');
-      b.textContent = label;
-      b.classList.toggle('on', val === current);
-      b.onclick = () => { onPick(val); segButtons(el, items, val, onPick); };
-      el.appendChild(b);
-    });
+  // ---------- элементы управления ----------
+  // Ползунок-полоса: заливка до значения рисуется через CSS-переменную --p.
+  function paintBar(inp) {
+    const min = +inp.min || 0, max = inp.max === '' ? 100 : +inp.max;
+    inp.style.setProperty('--p', ((inp.value - min) / (max - min)) * 100 + '%');
   }
-  segButtons($('aspect'), [['src', 'Исходник'], ['4:5', '4:5'], ['1:1', '1:1'], ['9:16', '9:16'], ['16:9', '16:9']],
-    state.s.aspect, (v) => { state.s.aspect = v; redraw(); });
-  segButtons($('density'), [['low', 'Мало'], ['mid', 'Средне'], ['high', 'Много']],
-    state.s.density, (v) => { state.s.density = v; redraw(); });
-  segButtons($('scale'), [[1, '1x · 1080'], [2, '2x · 2160'], [4, '4x · 4320']],
-    state.s.exportScale, (v) => { state.s.exportScale = v; });
+  const bars = $$('input.bar[data-key]');
+  bars.forEach((inp) => {
+    const key = inp.dataset.key;
+    if (!inp.max) inp.max = 100;
+    if (!inp.min) inp.min = 0;
+    inp.oninput = () => { state.s[key] = +inp.value; paintBar(inp); redraw(); updateVideoPlan(); updateGifPlan(); };
+  });
 
-  // ---------- палитра ----------
+  // Кнопки-«чипсы» (выбор одного варианта).
+  const chipSets = [];
+  function chips(el, items, key, after) {
+    const render = () => {
+      el.innerHTML = '';
+      items.forEach(([val, label]) => {
+        const b = document.createElement('button');
+        b.className = 'chip'; b.textContent = label;
+        b.classList.toggle('on', val === state.s[key]);
+        b.onclick = () => { state.s[key] = val; render(); if (after) after(val); };
+        el.appendChild(b);
+      });
+    };
+    chipSets.push(render);
+    render();
+  }
+  chips($('aspect'), [['src', 'Исходник'], ['4:5', '4:5'], ['1:1', '1:1'], ['9:16', '9:16'], ['16:9', '16:9']], 'aspect', redraw);
+  chips($('density'), [['low', 'Мало'], ['mid', 'Средне'], ['high', 'Много']], 'density', redraw);
+  chips($('anim'), [['off', 'Выкл'], ['calm', 'Спокойно'], ['active', 'Активно']], 'anim', redraw);
+  chips($('every'), [[1, 'каждый кадр'], [2, '÷2'], [4, '÷4'], [8, '÷8']], 'analysisEvery');
+  chips($('scale'), [[1, '1x · 1080'], [2, '2x · 2160'], [4, '4x · 4320']], 'exportScale');
+  chips($('vRes'), [['720', '720p'], ['1080', '1080p'], ['src', 'исходник']], 'vRes', () => updateVideoPlan());
+  chips($('vFps'), [[24, '24'], [30, '30 fps']], 'vFps', () => updateVideoPlan());
+  chips($('vQuality'), [['low', 'Эконом'], ['mid', 'Норма'], ['high', 'Высокое']], 'vQuality', () => updateVideoPlan());
+  chips($('gWidth'), [[480, '480'], [640, '640'], [800, '800 px']], 'gWidth', () => updateGifPlan());
+  chips($('gFps'), [[12, '12'], [15, '15 fps']], 'gFps', () => updateGifPlan());
+  // Флажки-«чипсы» (вкл/выкл).
+  $$('[data-flag]').forEach((b) => {
+    b.onclick = () => { state.s[b.dataset.flag] = !state.s[b.dataset.flag]; syncControls(); redraw(); updateVideoPlan(); };
+  });
+
+  // Панели интерфейса: круглые переключатели со стрелками.
+  $$('[data-zone]').forEach((b) => {
+    b.onclick = () => { const z = b.dataset.zone; state.s.zones[z] = !state.s.zones[z]; syncControls(); redraw(); };
+  });
+
+  // Цвета: пресеты и 4 своих цвета.
   function buildColors() {
-    const box = $('colors');
-    box.innerHTML = '';
-    state.s.colors.forEach((c, i) => {
-      const inp = document.createElement('input');
-      inp.type = 'color'; inp.value = c.toLowerCase();
-      inp.title = ['Тени', 'Глубокий тон', 'Средний тон', 'Акцент (свечение)', 'Светлый (линии, текст)'][i];
-      inp.oninput = () => { state.s.colors[i] = inp.value; state.s.preset = 'custom'; drawPresets(); redraw(); };
-      box.appendChild(inp);
+    const pr = $('presets');
+    pr.innerHTML = '';
+    Object.entries(HUD.PRESETS).forEach(([k, p]) => {
+      const b = document.createElement('button');
+      b.className = 'sw' + (state.s.preset === k ? ' on' : '');
+      b.title = p.name;
+      b.innerHTML = `<i style="background:${p.accent}"></i>`;
+      b.onclick = () => { state.s.preset = k; state.s.colors = p.colors.slice(); syncControls(); redraw(); };
+      pr.appendChild(b);
+    });
+    const cu = $('custom');
+    cu.innerHTML = '';
+    HUD.CUSTOM_COLORS.forEach(([i, name]) => {
+      const l = document.createElement('label');
+      l.innerHTML = `<span class="sw"><i style="background:${state.s.colors[i]}"></i><input type="color" value="${state.s.colors[i].toLowerCase()}"></span>${name}`;
+      const inp = l.querySelector('input'), sw = l.querySelector('i');
+      inp.oninput = () => {
+        state.s.colors[i] = inp.value.toUpperCase(); state.s.preset = 'custom'; sw.style.background = inp.value;
+        $$('#presets .sw').forEach((b) => b.classList.remove('on'));
+        redraw();
+      };
+      cu.appendChild(l);
     });
   }
-  function drawPresets() {
-    const items = Object.entries(HUD.PRESETS).map(([k, p]) => [k, p.name]);
-    segButtons($('presets'), items, state.s.preset, (k) => {
-      state.s.preset = k; state.s.colors = HUD.PRESETS[k].colors.slice(); buildColors(); redraw();
+
+  // Привести весь интерфейс в соответствие с state.s (после сброса и т. п.).
+  function syncControls() {
+    bars.forEach((inp) => { inp.value = state.s[inp.dataset.key]; paintBar(inp); });
+    chipSets.forEach((r) => r());
+    $$('[data-flag]').forEach((b) => b.classList.toggle('on', !!state.s[b.dataset.flag]));
+    $$('[data-zone]').forEach((b) => {
+      const on = !!state.s.zones[b.dataset.zone];
+      b.classList.toggle('on', on);
+      b.firstElementChild.src = on ? 'assets/icons/arrow-active.svg' : 'assets/icons/arrow.svg';
     });
+    buildColors();
+    $('seed').value = state.s.seed;
   }
-  drawPresets(); buildColors();
 
-  // ---------- ползунки и галочки ----------
-  function slider(parent, key, label, min, max) {
-    const row = document.createElement('div');
-    row.className = 'row';
-    row.innerHTML = `<div class="lab"><span>${label}</span><b>${state.s[key]}</b></div><input type="range" min="${min || 0}" max="${max || 100}" value="${state.s[key]}">`;
-    const inp = row.querySelector('input'), out = row.querySelector('b');
-    inp.oninput = () => { state.s[key] = +inp.value; out.textContent = inp.value; redraw(); };
-    parent.appendChild(row);
-  }
-  function check(parent, obj, key, label) {
-    const l = document.createElement('label');
-    l.className = 'check';
-    l.innerHTML = `<input type="checkbox" ${obj[key] ? 'checked' : ''}> ${label}`;
-    l.querySelector('input').onchange = (e) => { obj[key] = e.target.checked; redraw(); };
-    parent.appendChild(l);
-  }
-  const zc = $('zoneControls');
-  check(zc, state.s.zones, 'top', 'Шапка');
-  check(zc, state.s.zones, 'bottom', 'Низ');
-  check(zc, state.s.zones, 'right', 'Правая колонка');
-  check(zc, state.s.zones, 'left', 'Левая колонка');
-  const lc = $('layoutControls');
-  slider(lc, 'floatText', 'Плавающий текст (доля)');
-  slider(lc, 'lineOpacity', 'Непрозрачность линий');
-  slider(lc, 'zoom', 'Масштаб картинки, %', 60, 180);
+  // Кнопки сброса групп.
+  $$('.card[data-group]').forEach((card) => {
+    const btn = card.querySelector('.reset');
+    const g = card.dataset.group;
+    btn.onclick = () => {
+      if (g === 'input') { resetToDemo(); return; }
+      GROUPS[g].forEach((k) => { state.s[k] = clone(DEFAULTS[k]); });
+      syncControls(); redraw();
+    };
+  });
 
-  segButtons($('anim'), [['off', 'Выкл'], ['calm', 'Спокойно'], ['active', 'Активно']],
-    state.s.anim, (v) => { state.s.anim = v; redraw(); });
-  segButtons($('every'), [[1, 'каждый кадр'], [2, '÷2'], [4, '÷4'], [8, '÷8']],
-    state.s.analysisEvery, (v) => { state.s.analysisEvery = v; });
-  const mc = $('motionControls');
-  slider(mc, 'smoothing', 'Сглаживание данных', 0, 95);
-  slider(mc, 'trackSmooth', 'Инерция рамок увеличения');
-  check(mc, state.s, 'scanCrawl', 'Сканлайны ползут');
-
-  const ic = $('imgControls');
-  slider(ic, 'contrast', 'Контраст');
-  slider(ic, 'shadows', 'Провал теней в чёрный');
-  slider(ic, 'bloomThreshold', 'Свечение: порог яркости');
-  slider(ic, 'bloomStrength', 'Свечение: сила');
-  slider(ic, 'grain', 'Зерно');
-  check(ic, state.s, 'dither', 'Дизеринг (цифровая фактура)');
-  check(ic, state.s, 'scanlines', 'Сканлайны');
+  // «Дополнительно» — сворачиваемый блок.
+  $('moreToggle').onclick = () => $('more').classList.toggle('open');
 
   // ---------- seed ----------
   const seedInp = $('seed');
-  seedInp.value = state.s.seed;
   seedInp.onchange = () => { const v = parseInt(seedInp.value, 10); if (v >= 0) { state.s.seed = v; redraw(); } };
   function regen() { state.s.seed = HUD.randomSeed(); seedInp.value = state.s.seed; redraw(); }
   $('regen').onclick = regen;
   document.addEventListener('keydown', (e) => {
-    if (e.target.tagName === 'INPUT' || e.metaKey || e.ctrlKey) return;
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.metaKey || e.ctrlKey) return;
     if (e.key === 'r' || e.key === 'к') regen();
     if (e.key === ' ' && state.mode === 'video') {
       e.preventDefault();
@@ -328,41 +374,40 @@
     }
   });
 
-  // ---------- загрузка картинки ----------
+  // ---------- загрузка ----------
   let counter = 0;
   const isVideo = (f) => f.type.startsWith('video/') || /\.(mp4|webm|mov|m4v)$/i.test(f.name);
   async function loadVideo(file) {
-    $('fileinfo').textContent = `Открываю ${file.name}…`;
+    note(`Открываю ${file.name}…`);
     const vs = new HUD.VideoSource(file);
-    try { await vs.ready; } catch (e) { $('fileinfo').textContent = e.message; return; }
+    try { await vs.ready; } catch (e) { note(e.message); return; }
     if (state.video) { state.video.video.pause(); URL.revokeObjectURL(state.video.video.src); }
     state.video = vs; state.srcId = 'v' + (++counter); state.fileName = file.name;
     const v = vs.video;
-    $('fileinfo').textContent = `${file.name} · ${v.videoWidth}×${v.videoHeight} · ${v.duration.toFixed(1)} с`;
+    note(`${file.name} · ${v.videoWidth}×${v.videoHeight} · ${v.duration.toFixed(1)} с`);
     setMode('video');
     redraw();
   }
   function loadFile(file) {
     if (!file) return;
     if (isVideo(file)) { loadVideo(file); return; }
-    if (!file.type.startsWith('image/')) return;
+    if (!file.type.startsWith('image/')) { note('Этот файл не картинка и не видео'); return; }
     const im = new Image();
     im.onload = () => {
       state.img = im; state.imgId = 'f' + (++counter); state.srcId = state.imgId; state.fileName = file.name;
-      $('fileinfo').textContent = `${file.name} · ${im.naturalWidth}×${im.naturalHeight}`;
+      note(`${file.name} · ${im.naturalWidth}×${im.naturalHeight}`);
       setMode('image');
       redraw();
     };
-    im.onerror = () => { $('fileinfo').textContent = 'Не удалось открыть этот файл'; };
+    im.onerror = () => note('Не удалось открыть этот файл');
     im.src = URL.createObjectURL(file);
   }
-  $('file').onchange = (e) => loadFile(e.target.files[0]);
-  $('camBtn').onclick = () => (state.mode === 'camera' ? null : startCamera());
-  $('camFlip').onclick = () => switchCamera(null);
-  $('camSelect').onchange = (e) => switchCamera(e.target.value);
-  $('camShot').onclick = takePhoto;
-  $('camRec').onclick = () => (cam && cam.rec ? stopRec() : startRec().catch((e) => { $('fileinfo').textContent = 'Запись не удалась: ' + e.message; }));
-  $('camOff').onclick = () => { setMode('image'); $('fileinfo').textContent = 'Камера выключена'; redraw(); };
+  function resetToDemo() {
+    state.img = HUD.makeDemo(); state.imgId = 'demo'; state.srcId = 'demo'; state.fileName = 'specimen_demo.png';
+    setMode('image'); note('Сейчас: демо-образец'); redraw();
+  }
+  $('filePhoto').onchange = (e) => { loadFile(e.target.files[0]); e.target.value = ''; };
+  $('fileVideo').onchange = (e) => { loadFile(e.target.files[0]); e.target.value = ''; };
   const stage = $('stage');
   stage.addEventListener('dragover', (e) => { e.preventDefault(); stage.classList.add('dragging'); });
   stage.addEventListener('dragleave', (e) => { if (e.target === $('drop')) stage.classList.remove('dragging'); });
@@ -371,20 +416,29 @@
     loadFile(e.dataTransfer.files[0]);
   });
 
-  // ---------- экспорт ----------
+  // ---------- экспорт фото ----------
   function runExport(btn, fn) {
-    const btns = [$('savePng'), $('saveSvg')];
+    const btns = [$('savePng'), $('saveSvg'), $('copyPng'), $('pSnap')];
     btns.forEach((b) => (b.disabled = true));
-    const old = btn.textContent; btn.textContent = 'Готовлю…';
     setTimeout(() => {
-      fn().catch((e) => alert(e.message)).finally(() => { btns.forEach((b) => (b.disabled = false)); btn.textContent = old; });
+      fn().catch((e) => note('Ошибка: ' + e.message)).finally(() => { btns.forEach((b) => (b.disabled = false)); });
     }, 30);
   }
   $('savePng').onclick = () => runExport($('savePng'), () => HUD.exportPNG(frameState(), cur, state.s.exportScale));
   $('saveSvg').onclick = () => runExport($('saveSvg'), () => HUD.exportSVG(frameState(), cur));
-  $('pSnap').onclick = () => runExport($('savePng'), () => HUD.exportPNG(frameState(), cur, state.s.exportScale));
+  $('pSnap').onclick = () => runExport($('pSnap'), () => HUD.exportPNG(frameState(), cur, state.s.exportScale));
+  // Копировать фото в буфер обмена (PNG). Браузеры умеют класть в буфер только картинки.
+  // Запрос к буферу делаем прямо в обработчике клика (без задержек) — иначе Safari его не пропустит.
+  $('copyPng').onclick = () => {
+    if (!navigator.clipboard || !window.ClipboardItem) { note('Этот браузер не умеет копировать картинки — используйте «Скачать фото»'); return; }
+    note('Копирую…');
+    const blobPromise = HUD.renderPNGBlob(frameState(), cur, state.s.exportScale);
+    navigator.clipboard.write([new ClipboardItem({ 'image/png': blobPromise })])
+      .then(() => note('Фото скопировано в буфер обмена — можно вставлять'))
+      .catch(() => note('Браузер не дал доступ к буферу обмена — кликните по странице и нажмите ещё раз (или используйте «Скачать фото»)'));
+  };
 
-  // ---------- экспорт видео ----------
+  // ---------- экспорт видео и GIF ----------
   const vOpts = () => ({ res: state.s.vRes, fps: state.s.vFps, quality: state.s.vQuality, audio: state.s.vAudio });
   function updateVideoPlan() {
     if (state.mode !== 'video') return;
@@ -392,13 +446,8 @@
     $('vPlan').textContent = `${p.ew}×${p.eh} · ${p.dur.toFixed(1)} с · ${p.frames} кадров · ≈ ${p.estMB < 1 ? p.estMB.toFixed(2) : p.estMB.toFixed(1)} МБ`
       + (p.capped ? ' · размер уменьшен до предела кодека' : '');
   }
-  segButtons($('vRes'), [['720', '720p'], ['1080', '1080p'], ['src', 'как исходник']], state.s.vRes, (v) => { state.s.vRes = v; updateVideoPlan(); });
-  segButtons($('vFps'), [[24, '24 fps'], [30, '30 fps']], state.s.vFps, (v) => { state.s.vFps = v; updateVideoPlan(); });
-  segButtons($('vQuality'), [['low', 'Эконом'], ['mid', 'Норма'], ['high', 'Высокое']], state.s.vQuality, (v) => { state.s.vQuality = v; updateVideoPlan(); });
-  $('vAudio').checked = state.s.vAudio;
-  $('vAudio').onchange = (e) => { state.s.vAudio = e.target.checked; updateVideoPlan(); };
   let exportCtl = null;
-  async function runLong(btn, fn, done) {
+  async function runLong(fn, done) {
     if (exportCtl || state.mode !== 'video') return;
     state.video.video.pause();
     drawNow();
@@ -409,7 +458,7 @@
     const prog = (k, text) => {
       $('vBar').style.width = Math.round(k * 100) + '%';
       const el = (performance.now() - t0) / 1000, left = k > 0.02 ? el / k - el : 0;
-      $('vText').textContent = `${Math.round(k * 100)}% · ${text}` + (left > 1 ? ` · осталось ~${Math.ceil(left)} с` : '');
+      $('vText').textContent = `${Math.round(k * 100)}% · ${text}` + (left > 1 ? ` · ~${Math.ceil(left)} с` : '');
     };
     try {
       $('vText').textContent = 'Готовлю…';
@@ -418,15 +467,14 @@
       $('vText').textContent = e.name === 'AbortError' ? 'Отменено' : 'Ошибка: ' + e.message;
       if (e.name !== 'AbortError') console.error(e);
     } finally {
-      exportCtl = null; btns.forEach((b) => (b.disabled = false));
-      setTimeout(() => { if (!exportCtl) $('vBar').style.width = '0'; }, 4000);
+      exportCtl = null; btns.forEach((b) => (b.disabled = state.mode !== 'video'));
+      setTimeout(() => { if (!exportCtl) { $('vBar').style.width = '0'; $('vProgress').hidden = true; } }, 6000);
     }
   }
   const mb = (b) => (b / 1e6 < 1 ? (b / 1e6).toFixed(2) : (b / 1e6).toFixed(1)) + ' МБ';
-  $('saveVideo').onclick = () => runLong($('saveVideo'), (prog, sig) => HUD.exportVideo(state, cur, vOpts(), prog, sig),
+  $('saveVideo').onclick = () => runLong((prog, sig) => HUD.exportVideo(state, cur, vOpts(), prog, sig),
     (r) => `Готово: ${r.fmt.toUpperCase()} ${r.ew}×${r.eh}, ${mb(r.bytes)}` + (r.audioMissing ? ` · без звука: ${r.audioMissing}` : ''));
 
-  // ---------- GIF ----------
   const gOpts = () => ({ width: state.s.gWidth, fps: state.s.gFps });
   let gifTimer = null, gifKey = null, gifPending = null;
   function updateGifPlan() {
@@ -449,13 +497,14 @@
       if (gifPending === key) gifPending = null;
     }, 600);
   }
-  segButtons($('gWidth'), [[480, '480'], [640, '640'], [800, '800 px']], state.s.gWidth, (v) => { state.s.gWidth = v; updateGifPlan(); });
-  segButtons($('gFps'), [[12, '12 fps'], [15, '15 fps']], state.s.gFps, (v) => { state.s.gFps = v; updateGifPlan(); });
-  $('saveGif').onclick = () => runLong($('saveGif'), (prog, sig) => HUD.exportGIF(state, cur, gOpts(), prog, sig),
+  $('saveGif').onclick = () => runLong((prog, sig) => HUD.exportGIF(state, cur, gOpts(), prog, sig),
     (r) => `Готово: GIF ${r.gw}×${r.gh}, ${r.frames} кадров, ${mb(r.bytes)}` + (r.clipped ? ' · обрезано до 8 с' : ''));
   $('vCancel').onclick = () => { if (exportCtl) exportCtl.abort(); };
 
-  $('fileinfo').textContent = 'Сейчас: демо-образец';
+  // ---------- старт ----------
+  syncControls();
+  setMode('image');
+  note('Сейчас: демо-образец');
   HUD.state = state; HUD.cur = cur; HUD.redraw = redraw; HUD.drawNow = drawNow;   // для отладки
   HUD.loadFont().catch(() => {}).finally(() => { fontReady = true; redraw(); });
 })();

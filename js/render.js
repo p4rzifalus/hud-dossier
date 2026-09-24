@@ -2,7 +2,7 @@
 // и пересчитывается только когда эти настройки поменялись.
 HUD.BASE_W = 1080;
 
-HUD.IMAGE_KEYS = ['colors', 'contrast', 'shadows', 'bloomThreshold', 'bloomStrength', 'grain', 'dither', 'scanlines'];
+HUD.IMAGE_KEYS = ['colors', 'exposure', 'contrast', 'shadows', 'bloomThreshold', 'bloomStrength', 'grain', 'pixels', 'vhs'];
 
 HUD.posterSize = function (aspect, img) {
   let r;

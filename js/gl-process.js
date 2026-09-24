@@ -13,7 +13,7 @@ uniform sampler2D src;
 uniform sampler2D lut;
 uniform vec2 outSize;
 uniform vec4 fitRect;          // x, y (от верхнего левого угла), ширина, высота картинки в пикселях холста
-uniform float bp, expo, amp, g, levels;
+uniform float bp, expo, amp, g, levels, gain, gd;
 uniform int dither;
 uniform uint seed;
 uniform float bayer[64];
@@ -30,12 +30,15 @@ void main() {
   vec3 c = vec3(0.0);
   if (suv.x >= 0.0 && suv.y >= 0.0 && suv.x < 1.0 && suv.y < 1.0) c = texture(src, suv).rgb;
   float L = floor(dot(floor(c * 255.0 + 0.5), vec3(77.0, 150.0, 29.0)) / 256.0) / 255.0;
-  float v = clamp((L - bp) / (1.0 - bp), 0.0, 1.0);
+  float v = clamp((min(1.0, L * gain) - bp) / (1.0 - bp), 0.0, 1.0);
   v = v < 0.5 ? 0.5 * pow(2.0 * v, expo) : 1.0 - 0.5 * pow(2.0 * (1.0 - v), expo);
   uint gx = uint(floor(floor(px.x) / g)), gy = uint(floor(floor(px.y) / g));
   if (amp > 0.0) v += (hash2(gx, gy, seed) - 0.5) * amp * (0.2 + v);
   v = clamp(v, 0.0, 1.0);
-  if (dither == 1) v = floor(v * (levels - 1.0) + bayer[int((gy & 7u) * 8u + (gx & 7u))]) / (levels - 1.0);
+  if (dither == 1) {
+    uint dx = uint(floor(floor(px.x) / gd)), dy = uint(floor(floor(px.y) / gd));
+    v = floor(v * (levels - 1.0) + bayer[int((dy & 7u) * 8u + (dx & 7u))]) / (levels - 1.0);
+  }
   float li = floor(v * 255.0 + 0.5);
   o = vec4(texelFetch(lut, ivec2(int(li), 0), 0).rgb, li / 255.0);
 }`;
@@ -73,24 +76,49 @@ void main() {
   o = vec4(sum / wsum, 0.0, 0.0, 1.0);
 }`;
 
-  // Сборка: основа + свечение + сканлайны.
+  // Сборка: основа + свечение, затем VHS (срывы строк, сдвиг каналов, шумовые полосы) и сканлайны.
   const FS_COMP = `#version 300 es
-precision highp float;
+precision highp float; precision highp int;
 uniform sampler2D base, bn, bw;
 uniform vec2 outSize;
 uniform vec3 glow;
-uniform float k, unit, scanOffset;
-uniform int scan;
+uniform float k, unit, scanOffset, scanAmt;
+uniform int scan, vhs;
+uniform float vk, vjump, vprob, vwobble, vchroma, vnoise;
+uniform uint seed;
 out vec4 o;
-void main() {
-  vec2 uv = gl_FragCoord.xy / outSize;
-  vec3 c = texelFetch(base, ivec2(gl_FragCoord.xy), 0).rgb;
+float hash2(uint x, uint y, uint s) {
+  uint h = x * 374761393u + y * 668265263u + s * 1442695041u;
+  h = (h ^ (h >> 13u)) * 1274126177u;
+  h ^= h >> 16u;
+  return float(h) / 4294967296.0;
+}
+vec3 colAt(vec2 f) {
+  if (f.x < 0.0 || f.x >= outSize.x) return vec3(0.0);
+  vec3 c = texelFetch(base, ivec2(f), 0).rgb;
+  vec2 uv = f / outSize;
   float m = texture(bn, uv).r * 0.7 + texture(bw, uv).r * 0.9;
-  c = min(c + min(glow * m * k, vec3(1.0)), vec3(1.0));
+  return min(c + min(glow * m * k, vec3(1.0)), vec3(1.0));
+}
+void main() {
+  vec2 f = gl_FragCoord.xy;
+  float row = floor(outSize.y - f.y);
+  vec3 c;
+  if (vhs == 1) {
+    float yU = row / unit, band = floor(yU / 8.0);
+    float off = sin(yU * 0.05 + float(seed % 628u) / 100.0) * vwobble;
+    if (hash2(uint(band), 0u, seed) > 1.0 - vprob) off += (hash2(uint(band), 1u, seed) - 0.5) * 2.0 * vjump;
+    float sh = floor(off * unit + 0.5), cs = floor(vchroma * unit + 0.5);
+    c = vec3(colAt(vec2(f.x - sh - cs, f.y)).r, colAt(vec2(f.x - sh, f.y)).g, colAt(vec2(f.x - sh + cs, f.y)).b);
+    uint ru = uint(floor(row / unit));
+    if (hash2(ru, 2u, seed) > 1.0 - vnoise) {
+      float n = hash2(uint(floor(floor(f.x) / unit)), ru, seed + 7u);
+      c = mix(c, vec3(n), 0.35 * vk);
+    }
+  } else c = colAt(f);
   if (scan == 1) {
-    float row = floor(outSize.y - gl_FragCoord.y);
     float period = 4.0 * unit, lh = max(1.0, floor(unit + 0.5));
-    if (mod(row - scanOffset, period) < lh) c *= 0.7;
+    if (mod(row - scanOffset, period) < lh) c *= 1.0 - scanAmt;
   }
   o = vec4(c, 1.0);
 }`;
@@ -213,8 +241,11 @@ void main() {
       gl.uniform1f(u.expo, 1 + (s.contrast / 100) * 2.2);
       gl.uniform1f(u.amp, (s.grain / 100) * 0.22);
       gl.uniform1f(u.g, Math.max(1, Math.round(unit)));
-      gl.uniform1f(u.levels, 6);
-      gl.uniform1i(u.dither, s.dither ? 1 : 0);
+      const dp = HUD.ditherParams(s);
+      gl.uniform1f(u.levels, dp.levels);
+      gl.uniform1f(u.gd, Math.max(1, Math.round(unit * dp.size)));
+      gl.uniform1f(u.gain, HUD.exposureGain(s));
+      gl.uniform1i(u.dither, dp.on ? 1 : 0);
       gl.uniform1ui(u.seed, (o.seed >>> 0));
       gl.uniform1fv(u.bayer, BAYER8);
       draw(P.main, T.base, pw, ph);
@@ -247,7 +278,13 @@ void main() {
       gl.uniform1f(u.k, bloom ? (s.bloomStrength / 100) * 1.8 : 0);
       gl.uniform1f(u.unit, unit);
       gl.uniform1f(u.scanOffset, o.scanOffset || 0);
-      gl.uniform1i(u.scan, s.scanlines ? 1 : 0);
+      const vh = HUD.vhsParams(s);
+      gl.uniform1i(u.scan, vh.on ? 1 : 0);
+      gl.uniform1f(u.scanAmt, vh.scan);
+      gl.uniform1i(u.vhs, vh.on ? 1 : 0);
+      gl.uniform1f(u.vk, vh.k); gl.uniform1f(u.vjump, vh.jump); gl.uniform1f(u.vprob, vh.prob);
+      gl.uniform1f(u.vwobble, vh.wobble); gl.uniform1f(u.vchroma, vh.chroma); gl.uniform1f(u.vnoise, vh.noise);
+      gl.uniform1ui(u.seed, (o.seed >>> 0));
       draw(P.comp, null, pw, ph);
       last = { W, H, unit };
       return canvas;
