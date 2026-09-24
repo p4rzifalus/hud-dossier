@@ -25,7 +25,9 @@
 
   const state = {
     mode: 'image', video: null, srcId: 'demo',
-    img: HUD.makeDemo(), imgId: 'demo', fileName: 'specimen_demo.png',
+    srcKind: 'demo',   // откуда текущий источник: demo | photo | video | shot | camera
+    imgKind: 'demo',   // откуда текущая картинка (к ней возвращаемся, выключив камеру или видео)
+    img: HUD.makeDemo(), imgId: 'demo', fileName: 'specimen_demo.png', imgName: 'specimen_demo.png',
     s: Object.assign(clone(DEFAULTS), { seed: HUD.randomSeed() }),
   };
   const renderer = new HUD.Renderer();
@@ -194,13 +196,13 @@
     camPurpose = purpose;
     $('camShot').hidden = purpose !== 'photo';
     $('camRec').hidden = $('camMic').hidden = purpose !== 'video';
-    if (state.mode === 'camera') return;
+    if (state.mode === 'camera') { updateInputCard(); return; }
     const problem = HUD.cameraProblem();
     if (problem) { note(problem); return; }
     if (!cam) cam = new HUD.Camera();
     note('Включаю камеру…');
     try { await cam.start(); } catch (e) { note(HUD.cameraErrorText(e)); return; }
-    state.srcId = 'cam' + (++counter); state.fileName = 'camera';
+    state.srcId = 'cam' + (++counter); state.fileName = 'camera'; state.srcKind = 'camera';
     const v = cam.video;
     note(`Камера · ${v.videoWidth}×${v.videoHeight}`);
     setMode('camera');
@@ -221,7 +223,7 @@
   // «Снять»: кадр в полном разрешении становится обычной картинкой.
   function takePhoto() {
     const shot = cam.grab();
-    state.img = shot; state.imgId = 'shot' + (++counter); state.srcId = state.imgId; state.fileName = camName() + '.png';
+    state.img = shot; state.imgId = 'shot' + (++counter); state.srcId = state.imgId; state.fileName = state.imgName = camName() + '.png'; state.srcKind = state.imgKind = 'shot';
     note(`Снимок с камеры · ${shot.width}×${shot.height}`);
     setMode('image');
     redraw();
@@ -254,7 +256,11 @@
   $('camShot').onclick = takePhoto;
   $('camMic').onclick = () => $('camMic').classList.toggle('on');
   $('camRec').onclick = () => (cam && cam.rec ? stopRec() : startRec().catch((e) => { note('Запись не удалась: ' + e.message); }));
-  $('camOff').onclick = () => { setMode('image'); note('Камера выключена'); redraw(); };
+  $('camOff').onclick = () => {
+    // возвращаемся к картинке, которая была до камеры
+    state.srcKind = state.imgKind; state.srcId = state.imgId; state.fileName = state.imgName;
+    setMode('image'); note('Камера выключена'); redraw();
+  };
 
   // ---------- элементы управления ----------
   // Ползунок-полоса: заливка до значения рисуется через CSS-переменную --p.
@@ -355,6 +361,22 @@
       const dirty = g === 'input' ? state.srcId !== 'demo' : GROUPS[g].some((k) => !same(state.s[k], DEFAULTS[k]));
       card.querySelector('.reset').disabled = !dirty;
     });
+    updateInputCard();
+  }
+
+  // «Вводные»: показываем, что сейчас загружено — подсвечиваем кнопку и пишем имя файла.
+  function updateInputCard() {
+    const k = state.srcKind, name = state.fileName;
+    const set = (id, on) => $(id).classList.toggle('loaded', on);
+    set('btnPhoto', k === 'photo'); set('btnVideo', k === 'video');
+    set('camPhoto', k === 'shot' || (k === 'camera' && camPurpose === 'photo'));
+    set('camVideo', k === 'camera' && camPurpose === 'video');
+    const ll = $('loadLabel'), cl = $('camLabel');
+    ll.textContent = k === 'photo' ? `Фото загружено · ${name}` : k === 'video' ? `Видео загружено · ${name}` : 'Загрузить';
+    ll.title = k === 'photo' || k === 'video' ? name : '';
+    ll.classList.toggle('done', k === 'photo' || k === 'video');
+    cl.textContent = k === 'shot' ? 'Снимок сделан' : k === 'camera' ? (camPurpose === 'video' ? 'Камера включена · запись' : 'Камера включена · снимок') : 'Снять на камеру';
+    cl.classList.toggle('done', k === 'shot' || k === 'camera');
   }
 
   // Кнопки сброса групп.
@@ -394,7 +416,7 @@
     const vs = new HUD.VideoSource(file);
     try { await vs.ready; } catch (e) { note(e.message); return; }
     if (state.video) { state.video.video.pause(); URL.revokeObjectURL(state.video.video.src); }
-    state.video = vs; state.srcId = 'v' + (++counter); state.fileName = file.name;
+    state.video = vs; state.srcId = 'v' + (++counter); state.fileName = file.name; state.srcKind = 'video';
     const v = vs.video;
     note(`${file.name} · ${v.videoWidth}×${v.videoHeight} · ${v.duration.toFixed(1)} с`);
     setMode('video');
@@ -406,7 +428,7 @@
     if (!file.type.startsWith('image/')) { note('Этот файл не картинка и не видео'); return; }
     const im = new Image();
     im.onload = () => {
-      state.img = im; state.imgId = 'f' + (++counter); state.srcId = state.imgId; state.fileName = file.name;
+      state.img = im; state.imgId = 'f' + (++counter); state.srcId = state.imgId; state.fileName = state.imgName = file.name; state.srcKind = state.imgKind = 'photo';
       note(`${file.name} · ${im.naturalWidth}×${im.naturalHeight}`);
       setMode('image');
       redraw();
@@ -415,7 +437,7 @@
     im.src = URL.createObjectURL(file);
   }
   function resetToDemo() {
-    state.img = HUD.makeDemo(); state.imgId = 'demo'; state.srcId = 'demo'; state.fileName = 'specimen_demo.png';
+    state.img = HUD.makeDemo(); state.imgId = 'demo'; state.srcId = 'demo'; state.fileName = state.imgName = 'specimen_demo.png'; state.srcKind = state.imgKind = 'demo';
     setMode('image'); note('Сейчас: демо-образец'); redraw();
   }
   $('filePhoto').onchange = (e) => { loadFile(e.target.files[0]); e.target.value = ''; };

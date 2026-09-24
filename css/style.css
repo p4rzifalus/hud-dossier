@@ -82,7 +82,10 @@ img { display: block; }
 .more.open .toggle img { transform: rotate(-90deg); }
 
 .field { display: flex; flex-direction: column; gap: 5px; }
-.label { padding: 0 10px; font-size: 10px; opacity: 0.5; white-space: nowrap; }
+.label { padding: 0 10px; font-size: 10px; opacity: 0.5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.label.done { opacity: 0.85; }                             /* «Фото загружено · имя файла» */
+.btn.loaded { background: #fff; color: var(--text-dark); } /* кнопка, которой загрузили текущий источник */
+.btn.loaded img { filter: invert(1); opacity: 0.6; }
 .row { display: flex; gap: 5px; }
 
 /* ===== Кнопки ===== */

@@ -15,14 +15,14 @@
     <section class="card" data-group="input">
       <header class="card-head"><h2>Вводные</h2><button class="reset" title="Сбросить: демо-картинка"><img src="assets/icons/refresh-ccw.svg" alt=""></button></header>
       <div class="field">
-        <span class="label">Загрузить</span>
+        <span class="label" id="loadLabel">Загрузить</span>
         <div class="row">
-          <label class="btn"><img src="assets/icons/image.svg" alt="">Фото<input type="file" id="filePhoto" accept="image/*" hidden></label>
-          <label class="btn"><img src="assets/icons/video.svg" alt="">Видео<input type="file" id="fileVideo" accept="video/*,.mov,.m4v" hidden></label>
+          <label class="btn" id="btnPhoto"><img src="assets/icons/image.svg" alt="">Фото<input type="file" id="filePhoto" accept="image/*" hidden></label>
+          <label class="btn" id="btnVideo"><img src="assets/icons/video.svg" alt="">Видео<input type="file" id="fileVideo" accept="video/*,.mov,.m4v" hidden></label>
         </div>
       </div>
       <div class="field">
-        <span class="label">Снять на камеру</span>
+        <span class="label" id="camLabel">Снять на камеру</span>
         <div class="row">
           <button class="btn" id="camPhoto"><img src="assets/icons/user.svg" alt="">Фото</button>
           <button class="btn" id="camVideo"><img src="assets/icons/play.svg" alt="">Видео</button>
