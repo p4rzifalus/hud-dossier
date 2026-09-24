@@ -71,16 +71,21 @@ img { display: block; }
   width: var(--ctl); height: var(--ctl); flex: none; border: 0; border-radius: var(--r-btn); padding: 0;
   display: grid; place-items: center; cursor: pointer;
 }
-.reset { background: var(--reset-bg); visibility: hidden; opacity: 0; transition: opacity .15s, visibility 0s .15s; }
-.reset.show { visibility: visible; opacity: 1; transition: opacity .15s, visibility 0s; }   /* появляется, только когда есть что сбрасывать */
-.reset img { width: 12px; height: 12px; }
+.reset { background: var(--reset-bg); transition: background .15s; }
+.reset img { width: 12px; height: 12px; transition: filter .15s, opacity .15s; }
 .reset:hover { background: rgba(255, 120, 120, 0.28); }
+/* Нечего сбрасывать — кнопка серая и не нажимается; красной становится после изменений */
+.reset:disabled { background: var(--card); cursor: default; }
+.reset:disabled img { filter: grayscale(1) brightness(2); opacity: 0.35; }
 .toggle { background: var(--card); }
 .toggle img { width: 14px; height: 14px; transform: rotate(90deg); transition: transform .15s; }
 .more.open .toggle img { transform: rotate(-90deg); }
 
 .field { display: flex; flex-direction: column; gap: 5px; }
-.label { padding: 0 10px; font-size: 10px; opacity: 0.5; white-space: nowrap; }
+.label { padding: 0 10px; font-size: 10px; opacity: 0.5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.label.done { opacity: 0.85; }                             /* «Фото загружено · имя файла» */
+.btn.loaded { background: #fff; color: var(--text-dark); } /* кнопка, которой загрузили текущий источник */
+.btn.loaded img { filter: invert(1); opacity: 0.6; }
 .row { display: flex; gap: 5px; }
 
 /* ===== Кнопки ===== */
