@@ -147,6 +147,33 @@ HUD.inner = (p) => ({ x: p.x + 3, y: p.y + HUD.TITLE_H + 2, w: p.w - 6, h: p.h -
     return { W, H, Z, panels, markers, floats, meta };
   };
 
+  // Видео: рамки detail crop плавно следуют за самой детальной областью.
+  // dt — сколько секунд прошло с прошлого шага, tau — «инерция» (сек), snap — прыгнуть сразу (после перемотки).
+  HUD.trackROIs = function (scene, A, dt, tau, snap) {
+    const crops = scene.panels.filter((p) => p.type === 'crop' && p.roi);
+    const bounds = pad(A.bbox, 30, A.W, A.H);
+    const k = snap ? 1 : 1 - Math.exp(-dt / Math.max(0.05, tau));
+    crops.forEach((p) => {
+      const cur = p.roi;
+      const others = crops.filter((q) => q !== p).map((q) => q.roi);
+      let tgt = snap ? null : p._target;
+      const cand = A.findROI(cur.w, cur.h, bounds, others, !snap);
+      if (cand) {
+        const c = { x: cand.x + cand.w / 2 - cur.w / 2, y: cand.y + cand.h / 2 - cur.h / 2, w: cur.w, h: cur.h };
+        // новая цель должна быть заметно интереснее старой — иначе рамка металась бы между двумя местами
+        if (!tgt || A.edgeIn(c) > A.edgeIn(tgt) * 1.2) tgt = c;
+      }
+      if (!tgt) return;
+      p._target = tgt;
+      // плавно, но не быстрее ~300 единиц в секунду — дальние переезды идут спокойно
+      let dx = (tgt.x - cur.x) * k, dy = (tgt.y - cur.y) * k;
+      const lim = snap ? Infinity : 300 * dt, len = Math.hypot(dx, dy);
+      if (len > lim) { dx *= lim / len; dy *= lim / len; }
+      const x = cur.x + dx, y = cur.y + dy;
+      p.roi = { x: Math.max(0, Math.min(A.W - cur.w, x)), y: Math.max(0, Math.min(A.H - cur.h, y)), w: cur.w, h: cur.h };
+    });
+  };
+
   function pad(r, p, W, H) {
     const x = Math.max(0, r.x - p), y = Math.max(0, r.y - p);
     return { x, y, w: Math.min(W, r.x + r.w + p) - x, h: Math.min(H, r.y + r.h + p) - y };

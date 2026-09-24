@@ -12,6 +12,8 @@
       seed: HUD.randomSeed(), density: 'mid',
       zones: { top: true, left: false, right: true, bottom: true },
       floatText: 50, lineOpacity: 60, exportScale: 2,
+      // движение (видео и камера)
+      anim: 'calm', analysisEvery: 2, smoothing: 70, trackSmooth: 50, scanCrawl: false,
     },
   };
   const renderer = new HUD.Renderer();
@@ -43,16 +45,40 @@
   }
 
   // ---------- видео ----------
-  let fpsT = [];
+  // Автокачество превью: если кадр рисуется долго — уменьшаем разрешение превью (экспорт не затрагивается).
+  const SCALES = [1, 0.75, 0.5];
+  let fpsT = [], si = 0, frameMs = 0, calmSince = 0, lastSwitch = 0;
+  const buf = document.createElement('canvas');
+  function adaptScale(ms, now) {
+    frameMs = frameMs ? frameMs * 0.85 + ms * 0.15 : ms;
+    if (now - lastSwitch < 1000) return;
+    if (frameMs > 40 && si < SCALES.length - 1) { si++; lastSwitch = now; frameMs = 0; calmSince = 0; }
+    else if (frameMs < 16 && si > 0) {
+      if (!calmSince) calmSince = now;
+      else if (now - calmSince > 2000) { si--; lastSwitch = now; frameMs = 0; calmSince = 0; }
+    } else calmSince = 0;
+  }
   function drawVideoFrame() {
     const v = state.video.video;
     if (v.readyState < 2) return;
-    const t0 = performance.now();
-    const r = live.frame(v, state, view, 1);
+    const t0 = performance.now(), scale = SCALES[si];
+    let r;
+    if (scale === 1) r = live.frame(v, state, view, 1, v.currentTime);
+    else {
+      r = live.frame(v, state, buf, scale, v.currentTime);
+      const fw = r.W, fh = r.H;   // экран всегда 1080 по ширине — уменьшенный кадр растягиваем
+      if (view.width !== fw || view.height !== fh) { view.width = fw; view.height = fh; }
+      vctx.setTransform(1, 0, 0, 1, 0, 0); vctx.globalAlpha = 1; vctx.imageSmoothingEnabled = true;
+      vctx.drawImage(buf, 0, 0, fw, fh);
+    }
     cur.A = r.A; cur.scene = r.scene; cur.meta = r.meta;
     const t1 = performance.now();
-    if (!v.paused) { fpsT.push(t1); while (fpsT.length && t1 - fpsT[0] > 1000) fpsT.shift(); } else fpsT = [];
-    $('status').textContent = `${r.W}×${r.H} · кадр ${Math.round(t1 - t0)} мс` + (fpsT.length > 1 ? ` · ${fpsT.length} fps` : '') + ` · панелей ${r.scene.panels.length}`;
+    if (!v.paused) {
+      fpsT.push(t1); while (fpsT.length && t1 - fpsT[0] > 1000) fpsT.shift();
+      adaptScale(t1 - t0, t1);
+    } else fpsT = [];
+    $('status').textContent = `${r.W}×${r.H} · кадр ${Math.round(t1 - t0)} мс` + (fpsT.length > 1 ? ` · ${fpsT.length} fps` : '')
+      + (scale < 1 ? ` · превью ${Math.round(scale * 100)}%` : '') + ` · панелей ${r.scene.panels.length}`;
     updatePlayer();
   }
 
@@ -109,6 +135,7 @@
   function setMode(mode) {
     state.mode = mode;
     player.hidden = mode !== 'video';
+    $('motionSection').hidden = mode !== 'video';
     $('stage').classList.toggle('has-player', mode === 'video');
     if (mode !== 'video' && state.video) state.video.video.pause();
   }
@@ -176,6 +203,15 @@
   slider(lc, 'floatText', 'Плавающий текст (доля)');
   slider(lc, 'lineOpacity', 'Непрозрачность линий');
   slider(lc, 'zoom', 'Масштаб картинки, %', 60, 180);
+
+  segButtons($('anim'), [['off', 'Выкл'], ['calm', 'Спокойно'], ['active', 'Активно']],
+    state.s.anim, (v) => { state.s.anim = v; redraw(); });
+  segButtons($('every'), [[1, 'каждый кадр'], [2, '÷2'], [4, '÷4'], [8, '÷8']],
+    state.s.analysisEvery, (v) => { state.s.analysisEvery = v; });
+  const mc = $('motionControls');
+  slider(mc, 'smoothing', 'Сглаживание данных', 0, 95);
+  slider(mc, 'trackSmooth', 'Инерция рамок увеличения');
+  check(mc, state.s, 'scanCrawl', 'Сканлайны ползут');
 
   const ic = $('imgControls');
   slider(ic, 'contrast', 'Контраст');

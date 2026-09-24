@@ -3,56 +3,83 @@
 (function () {
   const CELL = 4;
 
-  HUD.analyze = function (proc, fit, W, H) {
+  // prev и alpha — для видео: новая карта яркости смешивается с прошлой (alpha = доля нового кадра),
+  // и всё остальное считается уже из сглаженной — поэтому панели не дрожат.
+  HUD.analyze = function (proc, fit, W, H, prev, alpha) {
     const S = proc.w / W;
     const gw = Math.ceil(W / CELL), gh = Math.ceil(H / CELL);
     const L = new Float32Array(gw * gh);
 
     // Средняя яркость в каждой ячейке (4×4 пробы — зерно при этом усредняется).
-    for (let gy = 0; gy < gh; gy++) for (let gx = 0; gx < gw; gx++) {
-      let sum = 0;
-      for (let sy = 0; sy < 4; sy++) for (let sx = 0; sx < 4; sx++) {
-        const px = Math.min(proc.w - 1, Math.floor((gx * CELL + (sx + 0.5)) * S));
-        const py = Math.min(proc.h - 1, Math.floor((gy * CELL + (sy + 0.5)) * S));
-        sum += proc.lum[py * proc.w + px];
+    if (proc.w === gw && proc.h === gh) {
+      // видео: видеокарта уже отдала готовую сетку ячеек
+      for (let i = 0; i < L.length; i++) L[i] = proc.lum[i] / 255;
+    } else {
+      for (let gy = 0; gy < gh; gy++) for (let gx = 0; gx < gw; gx++) {
+        let sum = 0;
+        for (let sy = 0; sy < 4; sy++) for (let sx = 0; sx < 4; sx++) {
+          const px = Math.min(proc.w - 1, Math.floor((gx * CELL + (sx + 0.5)) * S));
+          const py = Math.min(proc.h - 1, Math.floor((gy * CELL + (sy + 0.5)) * S));
+          sum += proc.lum[py * proc.w + px];
+        }
+        L[gy * gw + gx] = sum / (16 * 255);
       }
-      L[gy * gw + gx] = sum / (16 * 255);
     }
+    const blend = prev && prev.gw === gw && prev.gh === gh && alpha < 1;
+    if (blend) for (let i = 0; i < L.length; i++) L[i] = prev.L[i] + (L[i] - prev.L[i]) * alpha;
     const at = (x, y) => L[Math.min(gh - 1, Math.max(0, y)) * gw + Math.min(gw - 1, Math.max(0, x))];
 
     // Гистограмма яркости (256 корзин) по итоговой картинке.
     const hist = new Float64Array(256);
     const stride = Math.max(1, Math.floor(proc.lum.length / 250000));
+    let nRaw = 0;
+    for (let i = 0; i < proc.lum.length; i += stride) { hist[proc.lum[i]]++; nRaw++; }
+    if (blend) {
+      const f = nRaw / prev.n;   // прошлую гистограмму приводим к тому же числу проб
+      for (let i = 0; i < 256; i++) hist[i] = prev.hist[i] * f + (hist[i] - prev.hist[i] * f) * alpha;
+    }
     let n = 0, sum = 0, sum2 = 0;
-    for (let i = 0; i < proc.lum.length; i += stride) { const v = proc.lum[i]; hist[v]++; n++; sum += v; sum2 += v * v; }
+    for (let i = 0; i < 256; i++) { n += hist[i]; sum += hist[i] * i; sum2 += hist[i] * i * i; }
     const mean = sum / n / 255, sigma = Math.sqrt(Math.max(0, sum2 / n - (sum / n) ** 2)) / 255;
     const pct = (p) => { let acc = 0; for (let i = 0; i < 256; i++) { acc += hist[i]; if (acc >= p * n) return i / 255; } return 1; };
 
     // Края (оператор Собеля): где яркость резко меняется.
     const E = new Float32Array(gw * gh);
     let emax = 0, esum = 0;
-    for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
-      const gx = -at(x - 1, y - 1) - 2 * at(x - 1, y) - at(x - 1, y + 1) + at(x + 1, y - 1) + 2 * at(x + 1, y) + at(x + 1, y + 1);
-      const gy = -at(x - 1, y - 1) - 2 * at(x, y - 1) - at(x + 1, y - 1) + at(x - 1, y + 1) + 2 * at(x, y + 1) + at(x + 1, y + 1);
-      const e = Math.sqrt(gx * gx + gy * gy);
-      E[y * gw + x] = e; esum += e; if (e > emax) emax = e;
+    for (let y = 0; y < gh; y++) {
+      const edgeRow = y === 0 || y === gh - 1;
+      for (let x = 0; x < gw; x++) {
+        let gx, gy;
+        if (edgeRow || x === 0 || x === gw - 1) {   // края сетки — с проверкой границ
+          gx = -at(x - 1, y - 1) - 2 * at(x - 1, y) - at(x - 1, y + 1) + at(x + 1, y - 1) + 2 * at(x + 1, y) + at(x + 1, y + 1);
+          gy = -at(x - 1, y - 1) - 2 * at(x, y - 1) - at(x + 1, y - 1) + at(x - 1, y + 1) + 2 * at(x, y + 1) + at(x + 1, y + 1);
+        } else {                                     // середина — напрямую, так в разы быстрее
+          const i = y * gw + x, a = L[i - gw - 1], b = L[i - gw], c = L[i - gw + 1], l = L[i - 1], r = L[i + 1], e = L[i + gw - 1], f = L[i + gw], g = L[i + gw + 1];
+          gx = -a - 2 * l - e + c + 2 * r + g;
+          gy = -a - 2 * b - c + e + 2 * f + g;
+        }
+        const e = Math.sqrt(gx * gx + gy * gy);
+        E[y * gw + x] = e; esum += e; if (e > emax) emax = e;
+      }
     }
     const edgeThr = Math.max(0.08, emax * 0.25);
     let edgeCount = 0;
     for (let i = 0; i < E.length; i++) if (E[i] > edgeThr) edgeCount++;
 
     // Интегральные суммы: мгновенно считают сумму по любому прямоугольнику.
-    const integral = (arr, fn) => {
+    const integral = (arr, bright) => {
       const I = new Float64Array((gw + 1) * (gh + 1));
       for (let y = 0; y < gh; y++) {
         let row = 0;
-        for (let x = 0; x < gw; x++) { row += fn(arr[y * gw + x]); I[(y + 1) * (gw + 1) + x + 1] = I[y * (gw + 1) + x + 1] + row; }
+        const o = (y + 1) * (gw + 1) + 1, po = y * (gw + 1) + 1, ai = y * gw;
+        if (bright) for (let x = 0; x < gw; x++) { row += arr[ai + x] > 0.1 ? 1 : 0; I[o + x] = I[po + x] + row; }
+        else for (let x = 0; x < gw; x++) { row += arr[ai + x]; I[o + x] = I[po + x] + row; }
       }
       return (x0, y0, x1, y1) => I[y1 * (gw + 1) + x1] - I[y0 * (gw + 1) + x1] - I[y1 * (gw + 1) + x0] + I[y0 * (gw + 1) + x0];
     };
-    const sumE = integral(E, (v) => v);
-    const sumL = integral(L, (v) => v);
-    const sumBright = integral(L, (v) => (v > 0.1 ? 1 : 0));
+    const sumE = integral(E, false);
+    const sumL = integral(L, false);
+    const sumBright = integral(L, true);
 
     // Узлы: локальные максимумы краёв.
     const nodes = [];
@@ -99,7 +126,9 @@
     for (let i = 0; i < td.length; i += 4) {
       if (td[i] * 0.3 + td[i + 1] * 0.59 + td[i + 2] * 0.11 > 40) { cr += td[i]; cg += td[i + 1]; cb += td[i + 2]; cn++; }
     }
-    const srcColor = cn ? [cr / cn, cg / cn, cb / cn].map(Math.round) : [0, 0, 0];
+    let srcColor = cn ? [cr / cn, cg / cn, cb / cn] : [0, 0, 0];
+    if (blend) srcColor = srcColor.map((v, i) => prev.srcColor[i] + (v - prev.srcColor[i]) * alpha);
+    srcColor = srcColor.map(Math.round);
 
     // Грубая сглаженная сетка для изолиний (ячейка 12 единиц).
     const CC = 12, cgw = Math.ceil(W / CC), cgh = Math.ceil(H / CC);
@@ -129,12 +158,12 @@
     A.edgeIn = (r) => { const [x0, y0, x1, y1] = toCells(r); return x1 > x0 && y1 > y0 ? sumE(x0, y0, x1, y1) / ((x1 - x0) * (y1 - y0)) : 0; };
 
     // Самая «интересная» область заданного размера: больше всего краёв, внутри bounds, не пересекая taken.
-    A.findROI = (wU, hU, bounds, taken) => {
+    A.findROI = (wU, hU, bounds, taken, coarse) => {
       const ww = Math.max(2, Math.round(wU / CELL)), hh = Math.max(2, Math.round(hU / CELL));
       const [bx0, by0, bx1, by1] = toCells(bounds);
       const tk = taken.map((r) => toCells({ x: r.x - 8, y: r.y - 8, w: r.w + 16, h: r.h + 16 }));
       let best = null, bestScore = -1;
-      const step = Math.max(1, Math.round(Math.min(ww, hh) / 6));
+      const step = Math.max(coarse ? 2 : 1, Math.round(Math.min(ww, hh) / (coarse ? 3 : 6)));
       for (let y = by0; y + hh <= by1; y += step) for (let x = bx0; x + ww <= bx1; x += step) {
         if (tk.some(([a, b, c, d]) => x < c && x + ww > a && y < d && y + hh > b)) continue;
         const score = sumE(x, y, x + ww, y + hh) + 0.3 * sumL(x, y, x + ww, y + hh);
@@ -191,22 +220,24 @@
     };
 
     // Изолинии (marching squares) — отрезки в единицах постера.
+    // Для каждого из 16 случаев — какие стороны ячейки соединяет отрезок (0 верх, 1 право, 2 низ, 3 лево).
+    const CASES = [null, [[3, 2]], [[2, 1]], [[3, 1]], [[0, 1]], [[3, 0], [2, 1]], [[0, 2]], [[3, 0]],
+      [[3, 0]], [[0, 2]], [[0, 1], [3, 2]], [[0, 1]], [[3, 1]], [[2, 1]], [[3, 2]], null];
     A.contours = (levels) => {
       const segs = levels.map(() => []);
-      const v = (x, y) => C[y * cgw + x];
       for (let y = 0; y < cgh - 1; y++) for (let x = 0; x < cgw - 1; x++) {
-        const a = v(x, y), b = v(x + 1, y), c = v(x + 1, y + 1), d = v(x, y + 1);
-        levels.forEach((lv, li) => {
+        const a = C[y * cgw + x], b = C[y * cgw + x + 1], c = C[(y + 1) * cgw + x + 1], d = C[(y + 1) * cgw + x];
+        const X = x + 0.5, Y = y + 0.5;   // значения сетки относятся к центрам ячеек
+        for (let li = 0; li < levels.length; li++) {
+          const lv = levels[li];
           const idx = (a > lv ? 8 : 0) | (b > lv ? 4 : 0) | (c > lv ? 2 : 0) | (d > lv ? 1 : 0);
-          if (idx === 0 || idx === 15) return;
+          const cs = CASES[idx];
+          if (!cs) continue;
           const ip = (p, q) => (lv - p) / (q - p || 1e-6);
-          const X = x + 0.5, Y = y + 0.5;   // значения сетки относятся к центрам ячеек
-          const T = [(X + ip(a, b)) * CC, Y * CC], R = [(X + 1) * CC, (Y + ip(b, c)) * CC];
-          const B = [(X + ip(d, c)) * CC, (Y + 1) * CC], Lf = [X * CC, (Y + ip(a, d)) * CC];
-          const map = { 1: [[Lf, B]], 2: [[B, R]], 3: [[Lf, R]], 4: [[T, R]], 5: [[Lf, T], [B, R]], 6: [[T, B]], 7: [[Lf, T]],
-            8: [[Lf, T]], 9: [[T, B]], 10: [[T, R], [Lf, B]], 11: [[T, R]], 12: [[Lf, R]], 13: [[B, R]], 14: [[Lf, B]] };
-          map[idx].forEach((sg) => segs[li].push(sg));
-        });
+          const pt = (side) => side === 0 ? [(X + ip(a, b)) * CC, Y * CC] : side === 1 ? [(X + 1) * CC, (Y + ip(b, c)) * CC]
+            : side === 2 ? [(X + ip(d, c)) * CC, (Y + 1) * CC] : [X * CC, (Y + ip(a, d)) * CC];
+          for (const [s1, s2] of cs) segs[li].push([pt(s1), pt(s2)]);
+        }
       }
       return segs;
     };
