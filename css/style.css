@@ -1,9 +1,9 @@
 /* ===== Шрифт из макета: Pragmatica Next VF 2025 (ParaType), вариативный: ширина wdth × насыщенность wght.
-   Берём установленный в системе: файл шрифта в проект не кладём — его лицензия не разрешает выкладывать шрифт в интернет.
-   Где шрифта нет, будет системный. ===== */
+   Сначала берём установленный в системе, иначе — файл из папки fonts/ (используется с разрешения владельца). ===== */
 @font-face {
   font-family: 'HUD Pragmatica';
-  src: local('Pragmatica Next VF 2025'), local('PragmaticaNextVF');
+  src: local('Pragmatica Next VF 2025'), local('PragmaticaNextVF'),
+       url('../fonts/pragmatica-next-vf.ttf') format('truetype');
   font-weight: 100 900;
   font-stretch: 50% 200%;
 }
