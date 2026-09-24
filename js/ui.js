@@ -16,6 +16,7 @@
       anim: 'calm', analysisEvery: 2, smoothing: 70, trackSmooth: 50, scanCrawl: false,
       // экспорт видео
       vRes: '1080', vFps: 30, vQuality: 'mid', vAudio: true,
+      gWidth: 800, gFps: 12,
     },
   };
   const renderer = new HUD.Renderer();
@@ -95,6 +96,7 @@
     seg.style.left = (vs.inT / d) * 100 + '%';
     seg.style.width = ((vs.outT - vs.inT) / d) * 100 + '%';
     updateVideoPlan();
+    updateGifPlan();
   }
   // Проигрывание: на каждом обновлении экрана смотрим, сменился ли кадр видео; крутим по кругу внутри отрезка.
   let lastVT = -1;
@@ -306,13 +308,13 @@
   $('vAudio').checked = state.s.vAudio;
   $('vAudio').onchange = (e) => { state.s.vAudio = e.target.checked; updateVideoPlan(); };
   let exportCtl = null;
-  $('saveVideo').onclick = async () => {
+  async function runLong(btn, fn, done) {
     if (exportCtl || state.mode !== 'video') return;
-    const v = state.video.video;
-    v.pause();
+    state.video.video.pause();
     drawNow();
     exportCtl = new AbortController();
-    $('saveVideo').disabled = true; $('vProgress').hidden = false;
+    const btns = [$('saveVideo'), $('saveGif')];
+    btns.forEach((b) => (b.disabled = true)); $('vProgress').hidden = false;
     const t0 = performance.now();
     const prog = (k, text) => {
       $('vBar').style.width = Math.round(k * 100) + '%';
@@ -320,19 +322,50 @@
       $('vText').textContent = `${Math.round(k * 100)}% · ${text}` + (left > 1 ? ` · осталось ~${Math.ceil(left)} с` : '');
     };
     try {
-      const r = await HUD.exportVideo(state, cur, vOpts(), prog, exportCtl.signal);
-      $('vText').textContent = `Готово: ${r.fmt.toUpperCase()} ${r.ew}×${r.eh}, ${(r.bytes / 1e6).toFixed(1)} МБ` + (r.audioMissing ? ` · без звука: ${r.audioMissing}` : '');
+      $('vText').textContent = 'Готовлю…';
+      $('vText').textContent = done(await fn(prog, exportCtl.signal));
     } catch (e) {
       $('vText').textContent = e.name === 'AbortError' ? 'Отменено' : 'Ошибка: ' + e.message;
       if (e.name !== 'AbortError') console.error(e);
     } finally {
-      exportCtl = null; $('saveVideo').disabled = false;
+      exportCtl = null; btns.forEach((b) => (b.disabled = false));
       setTimeout(() => { if (!exportCtl) $('vBar').style.width = '0'; }, 4000);
     }
-  };
+  }
+  const mb = (b) => (b / 1e6 < 1 ? (b / 1e6).toFixed(2) : (b / 1e6).toFixed(1)) + ' МБ';
+  $('saveVideo').onclick = () => runLong($('saveVideo'), (prog, sig) => HUD.exportVideo(state, cur, vOpts(), prog, sig),
+    (r) => `Готово: ${r.fmt.toUpperCase()} ${r.ew}×${r.eh}, ${mb(r.bytes)}` + (r.audioMissing ? ` · без звука: ${r.audioMissing}` : ''));
+
+  // ---------- GIF ----------
+  const gOpts = () => ({ width: state.s.gWidth, fps: state.s.gFps });
+  let gifTimer = null, gifKey = null, gifPending = null;
+  function updateGifPlan() {
+    if (state.mode !== 'video' || !state.video) return;
+    const p = HUD.gifPlan(state, gOpts());
+    const head = `${p.gw}×${p.gh} · ${p.dur.toFixed(1)} с${p.clipped ? ' (обрежу до 8 с)' : ''} · ${p.frames} кадров`;
+    const key = JSON.stringify([gOpts(), state.srcId, state.video.inT, state.video.outT, HUD.IMAGE_KEYS.map((k) => state.s[k]), HUD.LAYOUT_KEYS.map((k) => state.s[k]), state.s.anim]);
+    if (key === gifKey || key === gifPending) return;   // уже посчитано или считается
+    gifPending = key;
+    $('gPlan').textContent = head + ' · считаю вес…';
+    clearTimeout(gifTimer);
+    gifTimer = setTimeout(async () => {
+      if (exportCtl || !cur.scene) { gifPending = null; return; }   // попробуем при следующем обновлении
+      try {
+        const e = await HUD.estimateGIF(state, cur, gOpts());
+        if (gifPending !== key) return;                           // настройки успели поменяться
+        gifKey = key;
+        $('gPlan').textContent = head + ` · ≈ ${mb(e.bytes)}`;
+      } catch (err) { $('gPlan').textContent = head; }
+      if (gifPending === key) gifPending = null;
+    }, 600);
+  }
+  segButtons($('gWidth'), [[480, '480'], [640, '640'], [800, '800 px']], state.s.gWidth, (v) => { state.s.gWidth = v; updateGifPlan(); });
+  segButtons($('gFps'), [[12, '12 fps'], [15, '15 fps']], state.s.gFps, (v) => { state.s.gFps = v; updateGifPlan(); });
+  $('saveGif').onclick = () => runLong($('saveGif'), (prog, sig) => HUD.exportGIF(state, cur, gOpts(), prog, sig),
+    (r) => `Готово: GIF ${r.gw}×${r.gh}, ${r.frames} кадров, ${mb(r.bytes)}` + (r.clipped ? ' · обрезано до 8 с' : ''));
   $('vCancel').onclick = () => { if (exportCtl) exportCtl.abort(); };
 
   $('fileinfo').textContent = 'Сейчас: демо-образец';
-  HUD.state = state; HUD.cur = cur; HUD.redraw = redraw;   // для отладки
+  HUD.state = state; HUD.cur = cur; HUD.redraw = redraw; HUD.drawNow = drawNow;   // для отладки
   HUD.loadFont().catch(() => {}).finally(() => { fontReady = true; redraw(); });
 })();

@@ -20,6 +20,34 @@ HUD.videoExportPlan = function (state, o) {
   return { W, H, scale, ew, eh, dur, frames, bitrate, estMB, capped };
 };
 
+// Общий покадровый цикл для видео и GIF: точно декодирует кадры отрезка и рендерит каждый в полном качестве.
+// onFrame(canvas, i) вызывается для каждого кадра; раскладка берётся из превью (cur.scene).
+HUD.forEachExportFrame = async function (state, cur, o, onFrame, signal) {
+  const MB = window.Mediabunny;
+  if (!MB) throw new Error('Не загрузилась библиотека видео (js/vendor/mediabunny.min.js).');
+  const input = new MB.Input({ source: new MB.BlobSource(state.video.file), formats: MB.ALL_FORMATS });
+  const vTrack = await input.getPrimaryVideoTrack();
+  if (!vTrack) throw new Error('В файле не нашлось видеодорожки.');
+  const live = new HUD.Live();
+  live.adoptScene(cur.scene);
+  const exportState = { srcId: state.srcId, fileName: state.fileName, s: state.s };
+  const out = document.createElement('canvas');
+  const times = []; for (let i = 0; i < o.frames; i++) times.push(o.inT + i / o.fps);
+  let i = 0, last = null;
+  try {
+    const sink = new MB.CanvasSink(vTrack, { poolSize: 2 });
+    for await (const wc of sink.canvasesAtTimestamps(times)) {
+      if (signal && signal.aborted) throw new DOMException('Экспорт отменён', 'AbortError');
+      const src = wc ? wc.canvas : last;
+      if (src) { last = src; live.frame(src, exportState, out, o.scale, times[i]); }
+      await onFrame(out, i);
+      i++;
+    }
+  } finally {
+    live.dispose();
+  }
+};
+
 HUD.exportVideo = async function (state, cur, o, onProgress, signal) {
   const MB = window.Mediabunny;
   if (!MB) throw new Error('Не загрузилась библиотека видео (js/vendor/mediabunny.min.js).');
@@ -58,28 +86,14 @@ HUD.exportVideo = async function (state, cur, o, onProgress, signal) {
   if (acodec) { audioSource = new MB.AudioSampleSource({ codec: acodec, bitrate: 128000 }); output.addAudioTrack(audioSource); }
   await output.start();
 
-  const live = new HUD.Live();
-  live.adoptScene(cur.scene);
-  const exportState = { srcId: state.srcId, fileName: state.fileName, s: state.s };
-  const out = document.createElement('canvas');
-  const times = []; for (let i = 0; i < frames; i++) times.push(inT + i / fps);
   const aborted = () => signal && signal.aborted;
   const share = acodec ? 0.95 : 1;
-  let i = 0, last = null;
   try {
-    const sink = new MB.CanvasSink(vTrack, { poolSize: 2 });
-    for await (const wc of sink.canvasesAtTimestamps(times)) {
-      if (aborted()) throw new DOMException('Экспорт отменён', 'AbortError');
-      const src = wc ? wc.canvas : last;
-      if (src) {
-        last = src;
-        live.frame(src, exportState, out, scale, times[i]);
-        ectx.drawImage(out, 0, 0);
-      }
+    await HUD.forEachExportFrame(state, cur, { scale, fps, frames, inT }, async (out, i) => {
+      ectx.drawImage(out, 0, 0);
       await videoSource.add(i / fps, 1 / fps);
-      i++;
-      onProgress && onProgress((i / frames) * share, `кадр ${i} / ${frames}`);
-    }
+      onProgress && onProgress(((i + 1) / frames) * share, `кадр ${i + 1} / ${frames}`);
+    }, signal);
     // Звук: вырезаем отрезок [начало, конец] и сдвигаем к нулю.
     if (audioSource) {
       onProgress && onProgress(share, 'звук…');
@@ -104,8 +118,6 @@ HUD.exportVideo = async function (state, cur, o, onProgress, signal) {
   } catch (e) {
     await output.cancel().catch(() => {});
     throw e;
-  } finally {
-    live.dispose();
   }
   const blob = new Blob([output.target.buffer], { type: fmt === 'mp4' ? 'video/mp4' : 'video/webm' });
   HUD.download(blob, HUD.exportName(state, '.' + fmt));
