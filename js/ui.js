@@ -33,6 +33,7 @@
   }
   function drawNow() {
     if (state.mode === 'video') { drawVideoFrame(); return; }
+    if (state.mode === 'camera') { drawCameraFrame(); return; }
     const s = state.s, t0 = performance.now();
     const r = renderer.renderImageLayer(state.img, state.imgId, s, 1);
     if (cur.aKey !== r.key) { cur.A = HUD.analyze(r.image, r.fit, r.W, r.H); cur.aKey = r.key; }
@@ -61,14 +62,14 @@
       else if (now - calmSince > 2000) { si--; lastSwitch = now; frameMs = 0; calmSince = 0; }
     } else calmSince = 0;
   }
-  function drawVideoFrame() {
-    const v = state.video.video;
-    if (v.readyState < 2) return;
+  // Кадр движущегося источника (видео или камера): t — время в секундах, playing — идёт ли движение.
+  function drawLiveFrame(v, t, playing) {
+    if (v.readyState < 2) return null;
     const t0 = performance.now(), scale = SCALES[si];
     let r;
-    if (scale === 1) r = live.frame(v, state, view, 1, v.currentTime);
+    if (scale === 1) r = live.frame(v, state, view, 1, t);
     else {
-      r = live.frame(v, state, buf, scale, v.currentTime);
+      r = live.frame(v, state, buf, scale, t);
       const fw = r.W, fh = r.H;   // экран всегда 1080 по ширине — уменьшенный кадр растягиваем
       if (view.width !== fw || view.height !== fh) { view.width = fw; view.height = fh; }
       vctx.setTransform(1, 0, 0, 1, 0, 0); vctx.globalAlpha = 1; vctx.imageSmoothingEnabled = true;
@@ -76,13 +77,17 @@
     }
     cur.A = r.A; cur.scene = r.scene; cur.meta = r.meta;
     const t1 = performance.now();
-    if (!v.paused) {
+    if (playing) {
       fpsT.push(t1); while (fpsT.length && t1 - fpsT[0] > 1000) fpsT.shift();
       adaptScale(t1 - t0, t1);
     } else fpsT = [];
     $('status').textContent = `${r.W}×${r.H} · кадр ${Math.round(t1 - t0)} мс` + (fpsT.length > 1 ? ` · ${fpsT.length} fps` : '')
       + (scale < 1 ? ` · превью ${Math.round(scale * 100)}%` : '') + ` · панелей ${r.scene.panels.length}`;
-    updatePlayer();
+    return r;
+  }
+  function drawVideoFrame() {
+    const v = state.video.video;
+    if (drawLiveFrame(v, v.currentTime, !v.paused)) updatePlayer();
   }
 
   const player = $('player'), pSeek = $('pSeek');
@@ -131,6 +136,7 @@
   // Текущий кадр как обычная картинка — для PNG/SVG «как у картинок».
   function frameState() {
     drawNow();   // раскладка и анализ должны соответствовать именно тому, что экспортируем
+    if (state.mode === 'camera') return { img: cam.grab(), imgId: 'cam@' + performance.now(), fileName: camName(), s: state.s };
     if (state.mode !== 'video') return state;
     const vs = state.video, t = vs.video.currentTime;
     const base = state.fileName.replace(/\.[^.]+$/, '');
@@ -140,10 +146,88 @@
   function setMode(mode) {
     state.mode = mode;
     player.hidden = mode !== 'video';
-    $('motionSection').hidden = mode !== 'video';
+    $('cambar').hidden = mode !== 'camera';
+    $('motionSection').hidden = mode === 'image';
     $('videoExport').hidden = mode !== 'video';
-    $('stage').classList.toggle('has-player', mode === 'video');
+    $('stage').classList.toggle('has-player', mode !== 'image');
     if (mode !== 'video' && state.video) state.video.video.pause();
+    if (mode !== 'camera' && cam) { if (cam.rec) stopRec(); cam.stop(); }
+  }
+
+  // ---------- камера ----------
+  let cam = null, camLastT = -1, recTimer = null;
+  const camName = () => { const d = new Date(), p = (n) => String(n).padStart(2, '0');
+    return `camera_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`; };
+  function drawCameraFrame() { drawLiveFrame(cam.video, cam.time(), true); }
+  function cameraLoop() {
+    if (state.mode !== 'camera' || !cam || !cam.stream) return;
+    const v = cam.video;
+    if (v.currentTime !== camLastT) { camLastT = v.currentTime; drawCameraFrame(); }
+    requestAnimationFrame(cameraLoop);
+  }
+  async function fillCameraList() {
+    const sel = $('camSelect');
+    const list = await cam.devices();
+    sel.innerHTML = '';
+    list.forEach((d, i) => {
+      const o = document.createElement('option');
+      o.value = d.deviceId; o.textContent = d.label || `Камера ${i + 1}`;
+      o.selected = d.deviceId === cam.deviceId;
+      sel.appendChild(o);
+    });
+    sel.hidden = list.length < 2;
+  }
+  async function startCamera() {
+    const problem = HUD.cameraProblem();
+    if (problem) { $('fileinfo').textContent = problem; return; }
+    if (!cam) cam = new HUD.Camera();
+    $('fileinfo').textContent = 'Включаю камеру…';
+    try { await cam.start(); } catch (e) { $('fileinfo').textContent = HUD.cameraErrorText(e); return; }
+    state.srcId = 'cam' + (++counter); state.fileName = 'camera';
+    const v = cam.video;
+    $('fileinfo').textContent = `Камера · ${v.videoWidth}×${v.videoHeight}`;
+    setMode('camera');
+    fillCameraList().catch(() => {});
+    cameraLoop();
+  }
+  async function switchCamera(deviceId) {
+    if (cam.rec) return;
+    if (deviceId) cam.deviceId = deviceId;
+    else { cam.deviceId = null; cam.facing = cam.facing === 'user' ? 'environment' : 'user'; }
+    try { await cam.start(); } catch (e) { $('fileinfo').textContent = HUD.cameraErrorText(e); return; }
+    live.reset();
+    const v = cam.video;
+    $('fileinfo').textContent = `Камера · ${v.videoWidth}×${v.videoHeight}`;
+    fillCameraList().catch(() => {});
+    cameraLoop();
+  }
+  // «Снять»: кадр в полном разрешении становится обычной картинкой.
+  function takePhoto() {
+    const shot = cam.grab();
+    state.img = shot; state.imgId = 'shot' + (++counter); state.srcId = state.imgId; state.fileName = camName() + '.png';
+    $('fileinfo').textContent = `Снимок с камеры · ${shot.width}×${shot.height}`;
+    setMode('image');
+    redraw();
+  }
+  async function startRec() {
+    await cam.startRecording(view, $('camMic').checked);
+    $('camRec').textContent = '■ стоп'; $('camRec').classList.add('rec');
+    ['camShot', 'camFlip', 'camSelect', 'camMic'].forEach((id) => ($(id).disabled = true));
+    recTimer = setInterval(() => { $('camTime').textContent = '● ' + HUD.fmtTime((performance.now() - cam.rec.t0) / 1000); }, 200);
+  }
+  async function stopRec() {
+    clearInterval(recTimer); $('camTime').textContent = '';
+    $('camRec').textContent = '⏺ запись'; $('camRec').classList.remove('rec');
+    ['camShot', 'camFlip', 'camSelect', 'camMic'].forEach((id) => ($(id).disabled = false));
+    const r = await cam.stopRecording();
+    if (!r || !r.processed.size) { $('fileinfo').textContent = 'Запись пустая.'; return; }
+    const name = camName();
+    HUD.download(r.processed, `${name}_hud.${r.ext}`);   // обработанная запись — сразу в загрузки
+    // Исходник открываем как видео: его можно экспортировать заново в полном качестве.
+    const rawFile = new File([r.raw], `${name}_raw.${(r.raw.type || '').includes('mp4') ? 'mp4' : 'webm'}`, { type: r.raw.type || 'video/webm' });
+    await loadVideo(rawFile);
+    $('fileinfo').textContent += ` · запись ${r.seconds.toFixed(1)} с сохранена; исходник открыт для экспорта в полном качестве`
+      + (r.micDenied ? ' · микрофон не разрешён — без звука' : '');
   }
 
   // ---------- кнопки-переключатели ----------
@@ -273,6 +357,12 @@
     im.src = URL.createObjectURL(file);
   }
   $('file').onchange = (e) => loadFile(e.target.files[0]);
+  $('camBtn').onclick = () => (state.mode === 'camera' ? null : startCamera());
+  $('camFlip').onclick = () => switchCamera(null);
+  $('camSelect').onchange = (e) => switchCamera(e.target.value);
+  $('camShot').onclick = takePhoto;
+  $('camRec').onclick = () => (cam && cam.rec ? stopRec() : startRec().catch((e) => { $('fileinfo').textContent = 'Запись не удалась: ' + e.message; }));
+  $('camOff').onclick = () => { setMode('image'); $('fileinfo').textContent = 'Камера выключена'; redraw(); };
   const stage = $('stage');
   stage.addEventListener('dragover', (e) => { e.preventDefault(); stage.classList.add('dragging'); });
   stage.addEventListener('dragleave', (e) => { if (e.target === $('drop')) stage.classList.remove('dragging'); });

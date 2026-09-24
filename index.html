@@ -11,8 +11,11 @@
   <header class="brand">HUD / DOSSIER<span>генератор постеров</span></header>
 
   <section>
-    <h3>Картинка</h3>
-    <label class="btn">Загрузить картинку или видео…<input type="file" id="file" accept="image/*,video/*,.mov,.m4v" hidden></label>
+    <h3>Источник</h3>
+    <div class="srcrow">
+      <label class="btn">Картинка или видео…<input type="file" id="file" accept="image/*,video/*,.mov,.m4v" hidden></label>
+      <button class="btn" id="camBtn">Камера</button>
+    </div>
     <div class="hint">или перетащи файл на превью · видео: mp4, webm, mov</div>
     <div id="fileinfo" class="hint"></div>
   </section>
@@ -95,6 +98,15 @@
     <button id="pReset" title="Весь ролик">весь</button>
     <button id="pSnap" title="Сохранить текущий кадр как PNG">стоп-кадр PNG</button>
   </div>
+  <div id="cambar" hidden>
+    <select id="camSelect" title="Какая камера"></select>
+    <button id="camFlip" title="Фронтальная / основная">⟲ камера</button>
+    <button id="camShot" title="Снять кадр — дальше работа как с картинкой">◉ снять фото</button>
+    <button id="camRec" title="Запись обработанного результата">⏺ запись</button>
+    <label class="check" title="Записывать звук с микрофона"><input type="checkbox" id="camMic"> звук</label>
+    <span id="camTime"></span>
+    <button id="camOff">выключить</button>
+  </div>
   <div id="drop">Отпусти, чтобы загрузить</div>
   <div id="status"></div>
 </main>
@@ -117,6 +129,7 @@
 <script src="js/export-video.js"></script>
 <script src="js/vendor/gifenc.js"></script>
 <script src="js/export-gif.js"></script>
+<script src="js/camera.js"></script>
 <script src="js/ui.js"></script>
 </body>
 </html>
