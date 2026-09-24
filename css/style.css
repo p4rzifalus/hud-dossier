@@ -71,7 +71,8 @@ img { display: block; }
   width: var(--ctl); height: var(--ctl); flex: none; border: 0; border-radius: var(--r-btn); padding: 0;
   display: grid; place-items: center; cursor: pointer;
 }
-.reset { background: var(--reset-bg); }
+.reset { background: var(--reset-bg); visibility: hidden; opacity: 0; transition: opacity .15s, visibility 0s .15s; }
+.reset.show { visibility: visible; opacity: 1; transition: opacity .15s, visibility 0s; }   /* появляется, только когда есть что сбрасывать */
 .reset img { width: 12px; height: 12px; }
 .reset:hover { background: rgba(255, 120, 120, 0.28); }
 .toggle { background: var(--card); }

@@ -37,6 +37,7 @@
   // ---------- перерисовка (не чаще одного раза за кадр) ----------
   let pending = false, fontReady = false;
   function redraw() {
+    updateResets();
     if (pending || !fontReady) return;
     pending = true;
     requestAnimationFrame(() => { pending = false; drawNow(); });
@@ -155,6 +156,7 @@
 
   function setMode(mode) {
     state.mode = mode;
+    updateResets();
     $('player').hidden = mode !== 'video';
     $('cambar').hidden = mode !== 'camera';
     $$('[data-show="live"]').forEach((el) => { el.hidden = mode === 'image'; });
@@ -343,6 +345,16 @@
     });
     buildColors();
     $('seed').value = state.s.seed;
+  }
+
+  // Кнопка сброса видна, только когда в группе есть что сбрасывать.
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  function updateResets() {
+    $$('.card[data-group]').forEach((card) => {
+      const g = card.dataset.group;
+      const dirty = g === 'input' ? state.srcId !== 'demo' : GROUPS[g].some((k) => !same(state.s[k], DEFAULTS[k]));
+      card.querySelector('.reset').classList.toggle('show', dirty);
+    });
   }
 
   // Кнопки сброса групп.
