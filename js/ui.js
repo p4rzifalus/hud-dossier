@@ -347,13 +347,13 @@
     $('seed').value = state.s.seed;
   }
 
-  // Кнопка сброса видна, только когда в группе есть что сбрасывать.
+  // Кнопка сброса активна (красная), только когда в группе есть что сбрасывать.
   const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   function updateResets() {
     $$('.card[data-group]').forEach((card) => {
       const g = card.dataset.group;
       const dirty = g === 'input' ? state.srcId !== 'demo' : GROUPS[g].some((k) => !same(state.s[k], DEFAULTS[k]));
-      card.querySelector('.reset').classList.toggle('show', dirty);
+      card.querySelector('.reset').disabled = !dirty;
     });
   }
 
