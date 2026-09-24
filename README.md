@@ -50,4 +50,4 @@
 
 ## Сторонние библиотеки
 
-Лежат в `js/vendor/` (см. `js/vendor/README.md`): Mediabunny (MPL-2.0) — чтение и запись видео, gifenc (MIT) — GIF. Шрифт постера — IBM Plex Mono (SIL Open Font License 1.1), встроен в `js/font-data.js`. Шрифт интерфейса — Pragmatica Next VF 2025 (ParaType), `fonts/pragmatica-next-vf.ttf`.
+Лежат в `js/vendor/` (см. `js/vendor/README.md`): Mediabunny (MPL-2.0) — чтение и запись видео, gifenc (MIT) — GIF. Шрифт постера — IBM Plex Mono (SIL Open Font License 1.1), встроен в `js/font-data.js`. Шрифт интерфейса — TikTok Sans (SIL Open Font License 1.1), `fonts/tiktok-sans-vf.ttf`.

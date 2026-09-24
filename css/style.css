@@ -1,11 +1,11 @@
-/* ===== Шрифт из макета: Pragmatica Next VF 2025 (ParaType), вариативный: ширина wdth × насыщенность wght.
-   Сначала берём установленный в системе, иначе — файл из папки fonts/ (используется с разрешения владельца). ===== */
+/* ===== Шрифт интерфейса: TikTok Sans (вариативный, SIL Open Font License) — fonts/tiktok-sans-vf.ttf.
+   Оси: ширина wdth 75–150, насыщенность wght 300–900, оптический размер opsz 12–36 (браузер ставит сам по кеглю).
+   Значения осей подобраны так, чтобы толщина штриха и длина надписей совпадали с Pragmatica Next из макета. ===== */
 @font-face {
-  font-family: 'HUD Pragmatica';
-  src: local('Pragmatica Next VF 2025'), local('PragmaticaNextVF'),
-       url('../fonts/pragmatica-next-vf.ttf') format('truetype');
-  font-weight: 100 900;
-  font-stretch: 50% 200%;
+  font-family: 'HUD Sans';
+  src: url('../fonts/tiktok-sans-vf.ttf') format('truetype');
+  font-weight: 300 900;
+  font-stretch: 75% 150%;
 }
 
 /* ===== Токены из макета Figma (HUD Generator) ===== */
@@ -26,11 +26,11 @@
   --gap: 5px;
   --col: 225px;
   --ctl: 30px;                              /* высота кнопок и ползунков */
-  --font: 'HUD Pragmatica', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
-  /* Начертания из макета (ширина, насыщенность) */
-  --ext-medium: 'wdth' 125, 'wght' 520;     /* Extended Medium — заголовки групп, подписи */
-  --ext-semibold: 'wdth' 125, 'wght' 600;   /* Extended Semibold — кнопки */
-  --wide-semibold: 'wdth' 200, 'wght' 600;  /* Wide Semibold — логотип */
+  --font: 'HUD Sans', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  /* Начертания (ширина, насыщенность) — аналоги Pragmatica из макета */
+  --ext-medium: 'wdth' 123.5, 'wght' 600;   /* ≈ Extended Medium — заголовки групп, подписи */
+  --ext-semibold: 'wdth' 123, 'wght' 700;   /* ≈ Extended Semibold — кнопки */
+  --wide-semibold: 'wdth' 150, 'wght' 900;  /* ≈ Wide Semibold — логотип (150 — максимальная ширина TikTok Sans) */
 }
 
 * { box-sizing: border-box; }
