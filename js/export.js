@@ -13,17 +13,20 @@ HUD.exportName = (state, ext) => {
   return `${base}_hud_${state.s.seed}${ext}`;
 };
 
-HUD.exportPNG = function (state, view, scale) {
+// Постер в PNG нужного размера (Blob). Используется и для скачивания, и для копирования в буфер обмена.
+HUD.renderPNGBlob = function (state, view, scale) {
   const r = new HUD.Renderer().renderImageLayer(state.img, state.imgId, state.s, scale);
   const c = document.createElement('canvas');
   c.width = r.pw; c.height = r.ph;
   const ctx = c.getContext('2d');
   ctx.drawImage(r.image.canvas, 0, 0);
   HUD.drawUI(new HUD.CanvasDraw(ctx, scale), view.scene, { A: view.A, s: state.s, meta: view.meta, proc: r.image, imgS: scale });
-  return new Promise((res, rej) => c.toBlob((b) => {
-    if (!b) return rej(new Error('Браузер не смог создать такой большой файл'));
-    HUD.download(b, HUD.exportName(state, scale > 1 ? `@${scale}x.png` : '.png')); res();
-  }, 'image/png'));
+  return new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('Браузер не смог создать такой большой файл'))), 'image/png'));
+};
+
+HUD.exportPNG = async function (state, view, scale) {
+  const b = await HUD.renderPNGBlob(state, view, scale);
+  HUD.download(b, HUD.exportName(state, scale > 1 ? `@${scale}x.png` : '.png'));
 };
 
 HUD.exportSVG = function (state, view) {

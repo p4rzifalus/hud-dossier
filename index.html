@@ -3,113 +3,152 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>HUD Dossier — генератор постеров</title>
+<title>HUD Generator</title>
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-<aside id="side">
-  <header class="brand">HUD / DOSSIER<span>генератор постеров</span></header>
+<div class="app">
+  <h1 class="logo">HUD / GENERATOR</h1>
 
-  <section>
-    <h3>Источник</h3>
-    <div class="srcrow">
-      <label class="btn">Картинка или видео…<input type="file" id="file" accept="image/*,video/*,.mov,.m4v" hidden></label>
-      <button class="btn" id="camBtn">Камера</button>
-    </div>
-    <div class="hint">или перетащи файл на превью · видео: mp4, webm, mov</div>
-    <div id="fileinfo" class="hint"></div>
-  </section>
-
-  <section>
-    <h3>Формат постера</h3>
-    <div class="seg" id="aspect"></div>
-  </section>
-
-  <section>
-    <h3>Палитра</h3>
-    <div class="seg" id="presets"></div>
-    <div class="colors" id="colors"></div>
-  </section>
-
-  <section>
-    <h3>Композиция</h3>
-    <div class="seedrow">
-      <label>seed <input type="number" id="seed"></label>
-      <button class="btn" id="regen" title="Клавиша R">Перегенерировать</button>
-    </div>
-    <div class="sub">Плотность интерфейса</div>
-    <div class="seg" id="density"></div>
-    <div class="sub">Зоны</div>
-    <div id="zoneControls" class="grid2"></div>
-    <div id="layoutControls"></div>
-  </section>
-
-  <section id="motionSection" hidden>
-    <h3>Движение (видео)</h3>
-    <div class="sub">Анимация интерфейса</div>
-    <div class="seg" id="anim"></div>
-    <div class="sub">Пересчитывать данные панелей</div>
-    <div class="seg" id="every"></div>
-    <div id="motionControls" style="margin-top:10px"></div>
-  </section>
-
-  <section>
-    <h3>Обработка картинки</h3>
-    <div id="imgControls"></div>
-  </section>
-
-  <section>
-    <h3>Экспорт</h3>
-    <div class="seg" id="scale"></div>
-    <div class="exportrow">
-      <button class="btn" id="savePng">Скачать PNG</button>
-      <button class="btn" id="saveSvg">Скачать SVG</button>
-    </div>
-    <div class="hint">SVG: рамка, текст и графики — векторные, картинка и увеличенные фрагменты — растр 2x. Для Figma установите шрифт IBM Plex Mono.</div>
-    <div id="videoExport" hidden>
-      <div class="sub">Видео (отрезок из плеера)</div>
-      <div class="seg" id="vRes"></div>
-      <div class="seg" id="vFps" style="margin-top:4px"></div>
-      <div class="seg" id="vQuality" style="margin-top:4px"></div>
-      <label class="check" style="margin-top:8px"><input type="checkbox" id="vAudio"> Звук из ролика</label>
-      <div class="hint" id="vPlan"></div>
-      <div class="exportrow"><button class="btn" id="saveVideo">Скачать видео</button></div>
-      <div class="sub">GIF (до 8 секунд)</div>
-      <div class="seg" id="gWidth"></div>
-      <div class="seg" id="gFps" style="margin-top:4px"></div>
-      <div class="hint" id="gPlan"></div>
-      <div class="exportrow"><button class="btn" id="saveGif">Скачать GIF</button></div>
-      <div id="vProgress" hidden>
-        <div class="bar"><div id="vBar"></div></div>
-        <div class="progrow"><span id="vText"></span><button class="btn" id="vCancel">Отмена</button></div>
+  <!-- ===== Левая колонка: настройки ===== -->
+  <aside class="col left">
+    <section class="card" data-group="input">
+      <header class="card-head"><h2>Вводные</h2><button class="reset" title="Сбросить: демо-картинка"><img src="assets/icons/refresh-ccw.svg" alt=""></button></header>
+      <div class="field">
+        <span class="label">Загрузить</span>
+        <div class="row">
+          <label class="btn"><img src="assets/icons/image.svg" alt="">Фото<input type="file" id="filePhoto" accept="image/*" hidden></label>
+          <label class="btn"><img src="assets/icons/video.svg" alt="">Видео<input type="file" id="fileVideo" accept="video/*,.mov,.m4v" hidden></label>
+        </div>
       </div>
-    </div>
-  </section>
-</aside>
+      <div class="field">
+        <span class="label">Снять на камеру</span>
+        <div class="row">
+          <button class="btn" id="camPhoto"><img src="assets/icons/user.svg" alt="">Фото</button>
+          <button class="btn" id="camVideo"><img src="assets/icons/play.svg" alt="">Видео</button>
+        </div>
+      </div>
+    </section>
 
-<main id="stage">
-  <canvas id="view"></canvas>
-  <div id="player" hidden>
-    <button id="pPlay" title="Пробел">▶</button>
-    <div class="track"><div id="pSeg"></div><input type="range" id="pSeek" min="0" max="1000" step="1" value="0"></div>
-    <span id="pTime">00:00.0 / 00:00.0</span>
-    <button id="pIn" title="Начало отрезка — текущий момент">[ начало</button>
-    <button id="pOut" title="Конец отрезка — текущий момент">конец ]</button>
-    <button id="pReset" title="Весь ролик">весь</button>
-    <button id="pSnap" title="Сохранить текущий кадр как PNG">стоп-кадр PNG</button>
-  </div>
-  <div id="cambar" hidden>
-    <select id="camSelect" title="Какая камера"></select>
-    <button id="camFlip" title="Фронтальная / основная">⟲ камера</button>
-    <button id="camShot" title="Снять кадр — дальше работа как с картинкой">◉ снять фото</button>
-    <button id="camRec" title="Запись обработанного результата">⏺ запись</button>
-    <label class="check" title="Записывать звук с микрофона"><input type="checkbox" id="camMic"> звук</label>
-    <span id="camTime"></span>
-    <button id="camOff">выключить</button>
-  </div>
-  <div id="drop">Отпусти, чтобы загрузить</div>
-  <div id="status"></div>
-</main>
+    <section class="card card-zones" data-group="zones">
+      <header class="card-head"><h2>Панели интерфейса</h2><button class="reset" title="Сбросить"><img src="assets/icons/refresh-ccw.svg" alt=""></button></header>
+      <div class="zones">
+        <div class="zone"><span class="label">Верх</span><button data-zone="top" style="--rot:-90deg" title="Шапка"><img alt=""></button></div>
+        <div class="zone"><span class="label">Низ</span><button data-zone="bottom" style="--rot:90deg" title="Нижняя полоса"><img alt=""></button></div>
+        <div class="zone"><span class="label">Право</span><button data-zone="right" style="--rot:0deg" title="Правая колонка"><img alt=""></button></div>
+        <div class="zone"><span class="label">Лево</span><button data-zone="left" style="--rot:180deg" title="Левая колонка"><img alt=""></button></div>
+      </div>
+    </section>
+
+    <section class="card" data-group="colors">
+      <header class="card-head"><h2>Цвета</h2><button class="reset" title="Сбросить"><img src="assets/icons/refresh-ccw.svg" alt=""></button></header>
+      <div class="colors-body">
+        <div class="field"><span class="label">Пресеты</span><div class="swatches" id="presets"></div></div>
+        <div class="field"><span class="label">Кастом</span><div class="custom" id="custom"></div></div>
+      </div>
+    </section>
+
+    <section class="card" data-group="process">
+      <header class="card-head"><h2>Обработка</h2><button class="reset" title="Сбросить"><img src="assets/icons/refresh-ccw.svg" alt=""></button></header>
+      <div class="field"><span class="label">Экспозиция</span><input type="range" class="bar" data-key="exposure"></div>
+      <div class="field"><span class="label">Контраст</span><input type="range" class="bar" data-key="contrast"></div>
+      <div class="field"><span class="label">Свечение</span><input type="range" class="bar" data-key="bloomStrength"></div>
+    </section>
+
+    <section class="card" data-group="effects">
+      <header class="card-head"><h2>Эффекты</h2><button class="reset" title="Сбросить"><img src="assets/icons/refresh-ccw.svg" alt=""></button></header>
+      <div class="field"><span class="label">Зерно</span><input type="range" class="bar" data-key="grain"></div>
+      <div class="field"><span class="label">Пиксели</span><input type="range" class="bar" data-key="pixels"></div>
+      <div class="field"><span class="label">VHS</span><input type="range" class="bar" data-key="vhs"></div>
+    </section>
+  </aside>
+
+  <!-- ===== Центр: постер ===== -->
+  <main id="stage">
+    <div class="poster">
+      <canvas id="view"></canvas>
+      <div id="drop">Отпусти, чтобы загрузить</div>
+    </div>
+
+    <div class="bar-panel" id="player" hidden>
+      <button class="btn icon" id="pPlay" title="Пробел"><img src="assets/icons/play.svg" alt=""></button>
+      <div class="seek"><input type="range" class="bar" id="pSeek" min="0" max="1000" step="1" value="0"><div id="pSeg"></div></div>
+      <span class="time" id="pTime">00:00.0 / 00:00.0</span>
+      <button class="btn" id="pIn" title="Начало отрезка — текущий момент">[ начало</button>
+      <button class="btn" id="pOut" title="Конец отрезка — текущий момент">конец ]</button>
+      <button class="btn" id="pReset" title="Весь ролик">весь</button>
+      <button class="btn" id="pSnap" title="Сохранить текущий кадр как PNG"><img src="assets/icons/image.svg" alt="">стоп-кадр</button>
+    </div>
+
+    <div class="bar-panel" id="cambar" hidden>
+      <select class="btn" id="camSelect" title="Какая камера"></select>
+      <button class="btn" id="camFlip" title="Фронтальная / основная">⟲ камера</button>
+      <button class="btn primary" id="camShot" title="Снять кадр — дальше работа как с картинкой">◉ Снять</button>
+      <button class="btn primary" id="camRec" title="Запись обработанного результата">⏺ Запись</button>
+      <button class="btn chip" id="camMic" title="Записывать звук с микрофона">звук</button>
+      <span class="time rec" id="camTime"></span>
+      <button class="btn" id="camOff">выключить</button>
+    </div>
+
+    <div class="note" id="fileinfo"></div>
+  </main>
+
+  <!-- ===== Правая колонка: экспорт ===== -->
+  <aside class="col right">
+    <section class="card">
+      <header class="card-head"><h2>Экспорт</h2></header>
+      <div class="row">
+        <button class="btn grow" id="savePng"><img src="assets/icons/image.svg" alt="">Скачать фото</button>
+        <button class="btn square" id="copyPng" title="Копировать фото в буфер обмена"><img src="assets/icons/copy.svg" alt=""></button>
+      </div>
+      <button class="btn" id="saveGif" title="Только для видео"><img src="assets/icons/lightning.svg" alt="">Скачать гифку</button>
+      <button class="btn" id="saveVideo" title="Только для видео"><img src="assets/icons/video.svg" alt="">Скачать видео</button>
+      <div id="vProgress" hidden>
+        <div class="progress"><div id="vBar"></div></div>
+        <div class="progrow"><span id="vText"></span><button class="btn chip" id="vCancel">Отмена</button></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <button class="btn primary big" id="regen" title="Новая раскладка (клавиша R)">Перегенерировать</button>
+    </section>
+
+    <section class="card more" id="more">
+      <header class="card-head"><h2>Дополнительно</h2><button class="toggle" id="moreToggle" title="Показать / скрыть"><img src="assets/icons/arrow.svg" alt=""></button></header>
+      <div class="more-body">
+        <div class="field"><span class="label">Формат постера</span><div class="chips" id="aspect"></div></div>
+        <div class="field"><span class="label">Seed (номер раскладки)</span><input type="number" class="num" id="seed"></div>
+        <div class="field"><span class="label">Плотность интерфейса</span><div class="chips" id="density"></div></div>
+        <div class="field"><span class="label">Плавающий текст</span><input type="range" class="bar" data-key="floatText"></div>
+        <div class="field"><span class="label">Непрозрачность линий</span><input type="range" class="bar" data-key="lineOpacity"></div>
+        <div class="field"><span class="label">Масштаб картинки</span><input type="range" class="bar" data-key="zoom" min="60" max="180"></div>
+        <div class="field"><span class="label">Провал теней в чёрный</span><input type="range" class="bar" data-key="shadows"></div>
+        <div class="field"><span class="label">Порог свечения</span><input type="range" class="bar" data-key="bloomThreshold"></div>
+
+        <div class="sub" data-show="live">Движение</div>
+        <div class="field" data-show="live"><span class="label">Анимация интерфейса</span><div class="chips" id="anim"></div></div>
+        <div class="field" data-show="live"><span class="label">Пересчитывать данные</span><div class="chips" id="every"></div></div>
+        <div class="field" data-show="live"><span class="label">Сглаживание данных</span><input type="range" class="bar" data-key="smoothing" max="95"></div>
+        <div class="field" data-show="live"><span class="label">Инерция рамок увеличения</span><input type="range" class="bar" data-key="trackSmooth"></div>
+        <div class="field" data-show="live"><div class="chips"><button class="chip" data-flag="scanCrawl">Сканлайны ползут</button></div></div>
+
+        <div class="sub">Фото</div>
+        <div class="field"><span class="label">Размер PNG</span><div class="chips" id="scale"></div></div>
+        <div class="field"><button class="btn" id="saveSvg">Скачать SVG (для Figma)</button></div>
+
+        <div class="sub" data-show="video">Видео</div>
+        <div class="field" data-show="video"><span class="label">Разрешение</span><div class="chips" id="vRes"></div></div>
+        <div class="field" data-show="video"><span class="label">Кадров в секунду · качество</span><div class="chips" id="vFps"></div><div class="chips" id="vQuality"></div></div>
+        <div class="field" data-show="video"><div class="chips"><button class="chip" data-flag="vAudio">Звук из ролика</button></div><span class="hint" id="vPlan"></span></div>
+
+        <div class="sub" data-show="video">GIF (до 8 секунд)</div>
+        <div class="field" data-show="video"><span class="label">Ширина · кадров в секунду</span><div class="chips" id="gWidth"></div><div class="chips" id="gFps"></div><span class="hint" id="gPlan"></span></div>
+
+        <div class="hint status" id="status"></div>
+      </div>
+    </section>
+  </aside>
+</div>
 
 <script src="js/font-data.js"></script>
 <script src="js/rng.js"></script>
