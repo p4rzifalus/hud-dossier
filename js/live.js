@@ -6,9 +6,17 @@ HUD.LAYOUT_KEYS = ['seed', 'density', 'zones', 'floatText', 'aspect', 'zoom'];
 
 HUD.Live = function () {
   let gp = null;
-  const st = { lk: null, ik: null, A: null, scene: null, meta: null, lastT: null, lastAT: 0, count: 0 };
+  const st = { lk: null, ik: null, A: null, scene: null, meta: null, lastT: null, lastAT: 0, count: 0, preset: null };
   this.gl = () => gp || (gp = new HUD.GLProcessor());
   this.reset = () => { st.lk = null; };
+  this.dispose = () => { if (gp) gp.dispose(); gp = null; };
+  // Экспорт: взять раскладку из превью (копию, без накопленного состояния анимации).
+  this.adoptScene = (scene) => {
+    if (!scene) return;
+    const copy = structuredClone(scene);
+    copy.panels.forEach((p) => { delete p._rows; delete p._b; delete p._target; });
+    st.preset = copy;
+  };
 
   // Рисует кадр src (время t, сек) в холст out. scale: 1 = постер 1080 px в ширину.
   this.frame = function (src, state, out, scale, t) {
@@ -36,7 +44,8 @@ HUD.Live = function () {
       // новая раскладка: источник или настройки композиции поменялись
       st.A = analyze(null);
       st.meta = HUD.makeMeta({ img: src, fileName: state.fileName, s }, W, H);
-      st.scene = HUD.buildScene(st.A, s, W, H, st.meta);
+      st.scene = st.preset && st.preset.W === W && st.preset.H === H ? st.preset : HUD.buildScene(st.A, s, W, H, st.meta);
+      st.preset = null;
       HUD.trackROIs(st.scene, st.A, 0, tau, true);   // рамки сразу там, куда их поведёт слежение
       st.lk = lk; st.ik = ik; st.count = 0; st.lastAT = t;
     } else if (st.ik !== ik || jump) {

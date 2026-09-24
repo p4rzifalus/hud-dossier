@@ -253,6 +253,12 @@ void main() {
       return canvas;
     };
 
+    // Освободить видеокарту (браузер держит ограниченное число таких холстов).
+    this.dispose = function () {
+      const ext = gl.getExtension('WEBGL_lose_context');
+      if (ext) ext.loseContext();
+    };
+
     // Карта яркости последнего кадра: { lum, w, h } — сетка ячеек 4×4 единицы постера.
     this.readLum = function () {
       const gw = Math.ceil(last.W / 4), gh = Math.ceil(last.H / 4);

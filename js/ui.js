@@ -14,6 +14,8 @@
       floatText: 50, lineOpacity: 60, exportScale: 2,
       // движение (видео и камера)
       anim: 'calm', analysisEvery: 2, smoothing: 70, trackSmooth: 50, scanCrawl: false,
+      // экспорт видео
+      vRes: '1080', vFps: 30, vQuality: 'mid', vAudio: true,
     },
   };
   const renderer = new HUD.Renderer();
@@ -92,6 +94,7 @@
     const seg = $('pSeg');
     seg.style.left = (vs.inT / d) * 100 + '%';
     seg.style.width = ((vs.outT - vs.inT) / d) * 100 + '%';
+    updateVideoPlan();
   }
   // Проигрывание: на каждом обновлении экрана смотрим, сменился ли кадр видео; крутим по кругу внутри отрезка.
   let lastVT = -1;
@@ -136,6 +139,7 @@
     state.mode = mode;
     player.hidden = mode !== 'video';
     $('motionSection').hidden = mode !== 'video';
+    $('videoExport').hidden = mode !== 'video';
     $('stage').classList.toggle('has-player', mode === 'video');
     if (mode !== 'video' && state.video) state.video.video.pause();
   }
@@ -287,6 +291,46 @@
   $('savePng').onclick = () => runExport($('savePng'), () => HUD.exportPNG(frameState(), cur, state.s.exportScale));
   $('saveSvg').onclick = () => runExport($('saveSvg'), () => HUD.exportSVG(frameState(), cur));
   $('pSnap').onclick = () => runExport($('savePng'), () => HUD.exportPNG(frameState(), cur, state.s.exportScale));
+
+  // ---------- экспорт видео ----------
+  const vOpts = () => ({ res: state.s.vRes, fps: state.s.vFps, quality: state.s.vQuality, audio: state.s.vAudio });
+  function updateVideoPlan() {
+    if (state.mode !== 'video') return;
+    const p = HUD.videoExportPlan(state, vOpts());
+    $('vPlan').textContent = `${p.ew}×${p.eh} · ${p.dur.toFixed(1)} с · ${p.frames} кадров · ≈ ${p.estMB < 1 ? p.estMB.toFixed(2) : p.estMB.toFixed(1)} МБ`
+      + (p.capped ? ' · размер уменьшен до предела кодека' : '');
+  }
+  segButtons($('vRes'), [['720', '720p'], ['1080', '1080p'], ['src', 'как исходник']], state.s.vRes, (v) => { state.s.vRes = v; updateVideoPlan(); });
+  segButtons($('vFps'), [[24, '24 fps'], [30, '30 fps']], state.s.vFps, (v) => { state.s.vFps = v; updateVideoPlan(); });
+  segButtons($('vQuality'), [['low', 'Эконом'], ['mid', 'Норма'], ['high', 'Высокое']], state.s.vQuality, (v) => { state.s.vQuality = v; updateVideoPlan(); });
+  $('vAudio').checked = state.s.vAudio;
+  $('vAudio').onchange = (e) => { state.s.vAudio = e.target.checked; updateVideoPlan(); };
+  let exportCtl = null;
+  $('saveVideo').onclick = async () => {
+    if (exportCtl || state.mode !== 'video') return;
+    const v = state.video.video;
+    v.pause();
+    drawNow();
+    exportCtl = new AbortController();
+    $('saveVideo').disabled = true; $('vProgress').hidden = false;
+    const t0 = performance.now();
+    const prog = (k, text) => {
+      $('vBar').style.width = Math.round(k * 100) + '%';
+      const el = (performance.now() - t0) / 1000, left = k > 0.02 ? el / k - el : 0;
+      $('vText').textContent = `${Math.round(k * 100)}% · ${text}` + (left > 1 ? ` · осталось ~${Math.ceil(left)} с` : '');
+    };
+    try {
+      const r = await HUD.exportVideo(state, cur, vOpts(), prog, exportCtl.signal);
+      $('vText').textContent = `Готово: ${r.fmt.toUpperCase()} ${r.ew}×${r.eh}, ${(r.bytes / 1e6).toFixed(1)} МБ` + (r.audioMissing ? ` · без звука: ${r.audioMissing}` : '');
+    } catch (e) {
+      $('vText').textContent = e.name === 'AbortError' ? 'Отменено' : 'Ошибка: ' + e.message;
+      if (e.name !== 'AbortError') console.error(e);
+    } finally {
+      exportCtl = null; $('saveVideo').disabled = false;
+      setTimeout(() => { if (!exportCtl) $('vBar').style.width = '0'; }, 4000);
+    }
+  };
+  $('vCancel').onclick = () => { if (exportCtl) exportCtl.abort(); };
 
   $('fileinfo').textContent = 'Сейчас: демо-образец';
   HUD.state = state; HUD.cur = cur; HUD.redraw = redraw;   // для отладки

@@ -63,6 +63,19 @@
       <button class="btn" id="saveSvg">Скачать SVG</button>
     </div>
     <div class="hint">SVG: рамка, текст и графики — векторные, картинка и увеличенные фрагменты — растр 2x. Для Figma установите шрифт IBM Plex Mono.</div>
+    <div id="videoExport" hidden>
+      <div class="sub">Видео (отрезок из плеера)</div>
+      <div class="seg" id="vRes"></div>
+      <div class="seg" id="vFps" style="margin-top:4px"></div>
+      <div class="seg" id="vQuality" style="margin-top:4px"></div>
+      <label class="check" style="margin-top:8px"><input type="checkbox" id="vAudio"> Звук из ролика</label>
+      <div class="hint" id="vPlan"></div>
+      <div class="exportrow"><button class="btn" id="saveVideo">Скачать видео</button></div>
+      <div id="vProgress" hidden>
+        <div class="bar"><div id="vBar"></div></div>
+        <div class="progrow"><span id="vText"></span><button class="btn" id="vCancel">Отмена</button></div>
+      </div>
+    </div>
   </section>
 </aside>
 
@@ -95,6 +108,8 @@
 <script src="js/video-source.js"></script>
 <script src="js/live.js"></script>
 <script src="js/export.js"></script>
+<script src="js/vendor/mediabunny.min.js"></script>
+<script src="js/export-video.js"></script>
 <script src="js/ui.js"></script>
 </body>
 </html>

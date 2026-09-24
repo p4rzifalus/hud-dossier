@@ -71,3 +71,8 @@ h3 { margin: 0 0 10px; font-size: 10px; font-weight: normal; text-transform: upp
 #pSeg { position: absolute; top: 7px; height: 6px; background: var(--accent); opacity: .3; pointer-events: none; }
 #pSeek { width: 100%; accent-color: var(--accent); position: relative; }
 #pTime { color: var(--dim); white-space: nowrap; }
+
+.bar { height: 6px; border: 1px solid var(--line); margin-top: 8px; }
+#vBar { height: 100%; width: 0; background: var(--accent); }
+.progrow { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; font-size: 10px; color: var(--dim); }
+.progrow .btn { padding: 3px 8px; font-size: 10px; }
